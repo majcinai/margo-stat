@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Margonem - Statystyki dzienne
 // @namespace    margonem-daily-stats
-// @version      2.7
-// @description  Dzienne statystyki postaci: czas gry, zabite potwory wg rang, walki PvP, smierci, loot wg rang, bilans zlota i przebyte kratki. Dane per postac i per swiat, z kalendarzem do przegladania historii. Synchronizacja w chmurze (Supabase) miedzy komputerami, na biezaco (kazdy komputer dopisuje wlasny wpis dnia co ok. 10 s, wyniki z tego samego dnia sie sumuja, nie nadpisuja) + publiczny ranking dzienny i miesieczny (co 15 minut, z przeklikiwaniem kategorii). Recznie "wyciagany" widget z okna Konfiguracji gry, gdy na belce nie ma miejsca.
+// @version      2.8
+// @description  Dzienne statystyki postaci: czas gry, zabite potwory wg rang, walki PvP, smierci, loot wg rang, bilans zlota, przebyte kratki i punkty ulepszen (przepalanie). Dane per postac, per swiat (sumy wszystkich postaci z serwera) i per konto, z kalendarzem do przegladania historii. Synchronizacja w chmurze (Supabase) miedzy komputerami, na biezaco (kazdy komputer dopisuje wlasny wpis dnia co ok. 10 s, wyniki z tego samego dnia sie sumuja, nie nadpisuja) + publiczny ranking dzienny i miesieczny (co 15 minut, z przeklikiwaniem kategorii). Recznie "wyciagany" widget z okna Konfiguracji gry, gdy na belce nie ma miejsca.
 // @match        https://*.margonem.pl/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
@@ -102,7 +102,9 @@
         { id: 'pvpW', label: 'PvP — wygrane', get: (t) => t.pvpW || 0, fmt: num },
         { id: 'pvpL', label: 'PvP — przegrane', get: (t) => t.pvpL || 0, fmt: num },
         { id: 'pvpD', label: 'PvP — nierozstrzygnięte', get: (t) => t.pvpD || 0, fmt: num },
-        { id: 'deaths', label: 'Zgony', get: (t) => t.deaths || 0, fmt: num }
+        { id: 'deaths', label: 'Zgony', get: (t) => t.deaths || 0, fmt: num },
+        { id: 'ulep', label: 'Punkty ulepszeń', get: (t) => t.ulep || 0, fmt: num },
+        { id: 'ulepN', label: 'Przepalone przedmioty', get: (t) => t.ulepN || 0, fmt: num }
     ].concat(RANKS.map((r) => ({
         id: 'k.' + r.id, label: 'Potwory: ' + r.label,
         get: (t) => (t.k && t.k[r.id]) || 0, fmt: num
@@ -146,6 +148,14 @@
         return s + ' s';
     }
 
+    // Polska odmiana po liczbie: 1 postac, 2-4 postacie, 5+ postaci.
+    function plural(n, one, few, many) {
+        const a = Math.abs(n) % 100, b = a % 10;
+        if (n === 1) return one;
+        if (b >= 2 && b <= 4 && (a < 10 || a >= 20)) return few;
+        return many;
+    }
+
     function esc(t) {
         return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
@@ -163,7 +173,8 @@
             kTot: 0, k: {},          // zabite potwory (razem / wg rang)
             iTot: 0, i: {},          // lup z potworow (razem / wg rang)
             pvpW: 0, pvpL: 0, pvpD: 0, // walki z graczami: wygrane / przegrane / nierozstrzygniete
-            deaths: 0                // smierci wlasnej postaci
+            deaths: 0,               // smierci wlasnej postaci
+            ulep: 0, ulepN: 0        // punkty ulepszen i liczba przepalonych przedmiotow
         };
     }
 
@@ -172,7 +183,7 @@
     // przez co liczniki PvP i zgonow stawaly w miejscu - stad naprawa.
     function normalizeDay(d) {
         if (!d || typeof d !== 'object') return emptyDay();
-        const nums = ['ms', 'steps', 'gIn', 'gOut', 'kTot', 'iTot', 'pvpW', 'pvpL', 'pvpD', 'deaths'];
+        const nums = ['ms', 'steps', 'gIn', 'gOut', 'kTot', 'iTot', 'pvpW', 'pvpL', 'pvpD', 'deaths', 'ulep', 'ulepN'];
         nums.forEach((k) => {
             const v = Number(d[k]);
             d[k] = Number.isFinite(v) ? v : 0;
@@ -354,6 +365,7 @@
             }
             if (S.ui.viewChar === key && snapAfterSwitch) { snapToAvailableDay(); snapAfterSwitch = false; }
             if (isOpen() && S.ui.viewChar === key) renderAll();
+            noteForeignArrived();
         });
     }
 
@@ -376,7 +388,95 @@
 
     function isForeignLoading() {
         const sel = S.ui.viewChar;
+        if (isScopeKey(sel)) {
+            const sc = mergedDb(sel).scope;
+            return !!(sc && sc.ready < sc.total);
+        }
         return !!(sel && sel !== myKey() && foreignCache.get(sel) === 'loading');
+    }
+
+    /* ==================================================================
+     *  PODSUMOWANIA ZBIORCZE (swiat / konto)
+     *  Margonem dzieli sie na: konto -> swiat -> postac, a na jednym
+     *  swiecie mozna miec kilka postaci. Poza pojedyncza postacia mozna
+     *  wiec ogladac tez sumy: caly swiat albo cale konto. Klucze takich
+     *  zakresow zaczynaja sie od '@', zeby nie mylily sie z kluczami
+     *  postaci (te maja postac "swiat|id").
+     * ================================================================== */
+    const SCOPE_ALL = '@all';
+    const SCOPE_WORLD = '@world:';
+
+    function isScopeKey(key) { return typeof key === 'string' && key.charAt(0) === '@'; }
+    function scopeWorld(key) { return key.indexOf(SCOPE_WORLD) === 0 ? key.slice(SCOPE_WORLD.length) : null; }
+
+    // Spis wszystkich znanych postaci: z tej przegladarki (localStorage +
+    // cross-storage gry) oraz z chmury (inne komputery tego samego konta).
+    function knownChars() {
+        const idx = Object.assign({}, crossChars, loadIndex());
+        cloud.chars.forEach((c) => {
+            idx[charKey(c.world, c.char_id)] = { world: c.world, id: c.char_id, nick: c.nick };
+        });
+        if (S.world && S.charId) idx[myKey()] = { world: S.world, id: S.charId, nick: S.nick };
+        return idx;
+    }
+
+    function charsInScope(key) {
+        const idx = knownChars();
+        const world = scopeWorld(key);
+        return Object.keys(idx).filter((k) => world === null || idx[k].world === world);
+    }
+
+    // Baza pojedynczej postaci. Gdy dane trzeba dopiero sciagnac, zwraca
+    // null i zleca pobranie w tle (po nim okno przerysuje sie samo).
+    function dbForChar(key) {
+        if (!key || key === myKey()) return S.db;
+        const parts = key.split('|');
+        // Postac z tego samego swiata mamy w lokalnym magazynie.
+        if (parts[0] === S.world) {
+            const local = loadDb(parts[0], parts[1]);
+            if (Object.keys(local.days).length) return local;
+        }
+        const cached = foreignCache.get(key);
+        if (cached === 'loading') return null;
+        if (cached) return cached;
+        // Postac znana z chmury (inny komputer tego samego konta) -
+        // pobieramy ja stamtad, bo to zrodlo pewniejsze niz cross-storage
+        // gry (dziala tylko w obrebie jednej przegladarki).
+        const inCloud = cloud.session && cloud.chars.some((c) => charKey(c.world, c.char_id) === key);
+        if (inCloud) pullCloudDb(parts[0], parts[1]);
+        else loadForeign(key);
+        return null;
+    }
+
+    // Suma dni wszystkich postaci z danego zakresu. Wynik trzymamy przez
+    // chwile w pamieci, bo okno przerysowuje sie co sekunde, a sumowanie
+    // dotyka kilku baz naraz.
+    let mergedCache = null;
+
+    function mergedDb(key) {
+        if (mergedCache && mergedCache.key === key && Date.now() - mergedCache.at < 1000) return mergedCache.db;
+        const keys = charsInScope(key);
+        const out = emptyDb('', scopeWorld(key) || '');
+        let ready = 0;
+        keys.forEach((k) => {
+            const db = dbForChar(k);
+            if (!db) return;
+            ready++;
+            Object.keys(db.days).forEach((day) => {
+                if (!out.days[day]) out.days[day] = emptyDay();
+                addDayInto(out.days[day], db.days[day]);
+            });
+        });
+        out.scope = { total: keys.length, ready: ready };
+        mergedCache = { key: key, at: Date.now(), db: out };
+        return out;
+    }
+
+    // Wolane, gdy dane obcej postaci wlasnie dotarly - suma zakresu jest
+    // wtedy nieaktualna, a otwarte okno trzeba przerysowac.
+    function noteForeignArrived() {
+        mergedCache = null;
+        if (isOpen() && isScopeKey(S.ui.viewChar)) renderAll();
     }
 
     /* ==================================================================
@@ -778,10 +878,12 @@
                 foreignCache.set(key, db);
                 if (S.ui.viewChar === key && snapAfterSwitch) { snapToAvailableDay(); snapAfterSwitch = false; }
                 if (isOpen() && S.ui.viewChar === key) renderAll();
+                noteForeignArrived();
             }).catch(function (e) {
                 LOG('chmura: nie udalo sie pobrac danych postaci', e.message || e);
                 foreignCache.set(key, emptyDb('', world));
                 if (isOpen() && S.ui.viewChar === key) renderAll();
+                noteForeignArrived();
             });
     }
 
@@ -841,6 +943,8 @@
         lastFightEnd: 0,       // znacznik czasu konca ostatniej walki
         lastFightSig: '',      // odcisk ostatniej rozliczonej walki
         lastCrossPush: 0,      // kiedy ostatnio wyslano kopie do cross-storage
+        enh: new Map(),        // id przedmiotu -> ostatni stan ulepszania
+        enhPreview: null,      // ostatni podglad przepalenia { itemId, gained, at }
         ui: null
     };
 
@@ -920,6 +1024,14 @@
         markDirty();
     }
 
+    function addUlep(points, burned) {
+        if (points <= 0 && burned <= 0) return;
+        const d = today();
+        if (points > 0) d.ulep = (d.ulep || 0) + points;
+        if (burned > 0) d.ulepN = (d.ulepN || 0) + burned;
+        markDirty();
+    }
+
     function addGold(delta) {
         if (!delta) return;
         const d = today();
@@ -948,8 +1060,9 @@
 
     function handlePacket(raw) {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
-        const d = (raw.d && typeof raw.d === 'object' && (raw.d.f || raw.d.item || raw.d.loot)) ? raw.d : raw;
-        if (!d.f && !d.item && !d.loot) return;
+        const d = (raw.d && typeof raw.d === 'object' &&
+            (raw.d.f || raw.d.item || raw.d.loot || raw.d.enhancement)) ? raw.d : raw;
+        if (!d.f && !d.item && !d.loot && !d.enhancement) return;
         sawPacket = true;
         if (!S.db) return;   // dodatek jeszcze nie wystartowal
 
@@ -964,6 +1077,7 @@
         if (d.f) { try { handleFight(d.f); } catch (e) { LOG('blad walki', e); } }
         if (d.loot) { try { handleLootPacket(d.loot); } catch (e) { LOG('blad lupow', e); } }
         if (d.item) { try { handleItemPacket(d.item); } catch (e) { LOG('blad przedmiotow', e); } }
+        if (d.enhancement) { try { handleEnhancement(d.enhancement); } catch (e) { LOG('blad ulepszania', e); } }
     }
 
     function onWsMessage(ev) {
@@ -1139,6 +1253,71 @@
             Object.keys(states).forEach((id) => {
                 if (fromFight) S.lootPool.set(String(id), true);
             });
+        }
+    }
+
+    /* ---------- ulepszanie przedmiotow (przepalanie) ----------
+     * Gra przysyla pakiet "enhancement" w dwoch odmianach:
+     *  - progress_preview: podglad, gdy przedmioty sa juz dolozone, ale
+     *    jeszcze nie zatwierdzone - { current, gained, ingredients, max,
+     *    upgradeLevel }; "gained" to punkty, ktore da zatwierdzenie,
+     *  - progressing: stan zatwierdzony - { current, max, upgradeLevel }
+     *    plus usages_preview { count, limit }, czyli licznik przepalonych
+     *    przedmiotow (gra ma na nie limit).
+     * Punkty liczymy z roznicy kolejnych "progressing" dla tego samego
+     * przedmiotu. Gdy przedmiot wskoczy na wyzszy poziom, licznik startuje
+     * od nowa i roznica wyszlaby ujemna - wtedy bierzemy dokladna wartosc
+     * z ostatniego podgladu (a gdy go nie ma, szacujemy z reszty do pelna).
+     */
+    function handleEnhancement(enh) {
+        if (!enh || typeof enh !== 'object') return;
+        const itemId = String(enh.itemId !== undefined ? enh.itemId : '?');
+
+        const preview = enh.progress_preview;
+        if (preview && typeof preview === 'object') {
+            const gained = Number(preview.gained);
+            if (Number.isFinite(gained) && gained > 0) {
+                S.enhPreview = { itemId: itemId, gained: gained, at: Date.now() };
+            }
+            return;
+        }
+
+        const p = enh.progressing;
+        if (!p || typeof p !== 'object') return;
+        const cur = Number(p.current);
+        if (!Number.isFinite(cur)) return;
+        const max = Number(p.max);
+        const lvl = Number(p.upgradeLevel);
+        const usages = enh.usages_preview ? Number(enh.usages_preview.count) : NaN;
+
+        const last = S.enh.get(itemId);
+        S.enh.set(itemId, {
+            cur: cur,
+            max: Number.isFinite(max) ? max : 0,
+            lvl: Number.isFinite(lvl) ? lvl : 0,
+            usages: Number.isFinite(usages) ? usages : null
+        });
+        // Pierwszy pakiet po wejsciu do okna to tylko punkt odniesienia.
+        if (!last) return;
+
+        let points = 0;
+        if (Number.isFinite(lvl) && lvl > last.lvl) {
+            const fresh = S.enhPreview && S.enhPreview.itemId === itemId &&
+                Date.now() - S.enhPreview.at < 120000;
+            points = fresh ? S.enhPreview.gained : Math.max(0, (last.max || 0) - last.cur) + cur;
+        } else if (cur > last.cur) {
+            points = cur - last.cur;
+        }
+        S.enhPreview = null;
+
+        let burned = 0;
+        if (Number.isFinite(usages) && last.usages !== null && usages > last.usages) {
+            burned = usages - last.usages;
+        }
+
+        if (points > 0 || burned > 0) {
+            addUlep(points, burned);
+            refreshIfOpen();
         }
     }
 
@@ -1528,30 +1707,17 @@
         out.pvpL += d.pvpL || 0;
         out.pvpD += d.pvpD || 0;
         out.deaths += d.deaths || 0;
+        out.ulep += d.ulep || 0;
+        out.ulepN += d.ulepN || 0;
         Object.keys(d.k || {}).forEach((r) => { out.k[r] = (out.k[r] || 0) + d.k[r]; });
         Object.keys(d.i || {}).forEach((r) => { out.i[r] = (out.i[r] || 0) + d.i[r]; });
     }
 
     function activeDb() {
         const sel = S.ui.viewChar;
+        if (isScopeKey(sel)) return mergedDb(sel);
         if (!sel || sel === myKey()) return S.db;
-        const parts = sel.split('|');
-        // Postac z tego samego swiata mamy w lokalnym magazynie.
-        if (parts[0] === S.world) {
-            const local = loadDb(parts[0], parts[1]);
-            if (Object.keys(local.days).length) return local;
-        }
-        const cached = foreignCache.get(sel);
-        if (cached && cached !== 'loading') return cached;
-        if (!cached) {
-            // Postac znana z chmury (inny komputer tego samego konta) -
-            // pobieramy ja stamtad, bo to zrodlo pewniejsze niz
-            // cross-storage gry (dziala tylko w obrebie jednej przegladarki).
-            const inCloud = cloud.session && cloud.chars.some((c) => charKey(c.world, c.char_id) === sel);
-            if (inCloud) pullCloudDb(parts[0], parts[1]);
-            else loadForeign(sel);
-        }
-        return emptyDb('', parts[0]);
+        return dbForChar(sel) || emptyDb('', sel.split('|')[0]);
     }
 
     function aggregate() {
@@ -1755,7 +1921,48 @@
         return frame;
     }
 
+    /* Gra przechwytuje kolko myszy globalnie (m.in. do przybliżania mapy)
+     * i blokuje domyslne przewijanie - suwak w naszym oknie dzialal, a
+     * kolko juz nie. Przewijamy wiec sami. Nasluch wisi na oknie w fazie
+     * przechwytywania, wiec dostajemy zdarzenie przed handlerami gry, a
+     * blokujemy je tylko wtedy, gdy kursor jest nad naszym oknem i faktycznie
+     * bylo co przewinac (poza nim gra dziala jak dotad). */
+    let wheelHooked = false;
+
+    function installWheelFix() {
+        if (wheelHooked) return;
+        wheelHooked = true;
+        window.addEventListener('wheel', function (e) {
+            const t = e.target;
+            const root = t && t.closest ? t.closest('.mstat-root') : null;
+            if (!root) return;
+
+            // Szukamy najblizszego elementu, ktory faktycznie ma co przewijac.
+            let box = null, el = t;
+            while (el && el !== root) {
+                if (el.nodeType === 1 && el.scrollHeight - el.clientHeight > 1) {
+                    const ov = getComputedStyle(el).overflowY;
+                    if (ov === 'auto' || ov === 'scroll') { box = el; break; }
+                }
+                el = el.parentNode;
+            }
+            if (!box) box = root;
+
+            let delta = e.deltaY;
+            if (e.deltaMode === 1) delta *= 16;                  // przewijanie liniami
+            else if (e.deltaMode === 2) delta *= box.clientHeight; // ekranami
+
+            const before = box.scrollTop;
+            box.scrollTop = before + delta;
+            if (box.scrollTop !== before) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, { capture: true, passive: false });
+    }
+
     function bindContentEvents() {
+        installWheelFix();
         win.querySelector('.mstat-cal').addEventListener('click', (e) => {
             const cell = e.target.closest('.mstat-day');
             if (!cell || !cell.dataset.day) return;
@@ -2073,22 +2280,41 @@
     /* ---------- rysowanie ---------- */
     function renderCharSelect() {
         const sel = win.querySelector('.mstat-char');
-        const idx = Object.assign({}, crossChars, loadIndex());
-        cloud.chars.forEach((c) => {
-            idx[charKey(c.world, c.char_id)] = { world: c.world, id: c.char_id, nick: c.nick };
-        });
-        idx[myKey()] = { world: S.world, id: S.charId, nick: S.nick };
+        const idx = knownChars();
         const keys = Object.keys(idx).sort((a, b) => {
             const ca = idx[a], cb = idx[b];
             return (ca.world || '').localeCompare(cb.world || '') ||
                 (ca.nick || '').localeCompare(cb.nick || '');
         });
         const cur = S.ui.viewChar || myKey();
-        sel.innerHTML = keys.map((k) => {
+        const opt = (val, label) => '<option value="' + esc(val) + '"' +
+            (val === cur ? ' selected' : '') + '>' + esc(label) + '</option>';
+
+        // Najpierw sumy zbiorcze (swiat / cale konto), potem pojedyncze postacie.
+        const worlds = [];
+        keys.forEach((k) => { const w = idx[k].world; if (w && worlds.indexOf(w) === -1) worlds.push(w); });
+        worlds.sort((a, b) => a.localeCompare(b));
+
+        let html = '';
+        if (worlds.length) {
+            html += '<optgroup label="Podsumowania">';
+            worlds.forEach((w) => {
+                const n = keys.filter((k) => idx[k].world === w).length;
+                html += opt(SCOPE_WORLD + w, 'Świat ' + w + ' — ' + n + ' ' + plural(n, 'postać', 'postacie', 'postaci'));
+            });
+            if (worlds.length > 1) {
+                html += opt(SCOPE_ALL, 'Całe konto — ' + worlds.length + ' światy, ' +
+                    keys.length + ' ' + plural(keys.length, 'postać', 'postacie', 'postaci'));
+            }
+            html += '</optgroup>';
+        }
+        html += '<optgroup label="Postacie">';
+        keys.forEach((k) => {
             const c = idx[k];
-            const label = (c.nick || 'postać ' + c.id) + ' — ' + c.world + (k === myKey() ? ' (tu jesteś)' : '');
-            return '<option value="' + esc(k) + '"' + (k === cur ? ' selected' : '') + '>' + esc(label) + '</option>';
-        }).join('');
+            html += opt(k, (c.nick || 'postać ' + c.id) + ' — ' + c.world + (k === myKey() ? ' (tu jesteś)' : ''));
+        });
+        html += '</optgroup>';
+        sel.innerHTML = html;
     }
 
     function renderCalendar() {
@@ -2134,6 +2360,7 @@
             '<div><span>Przedmioty</span><span>' + num(sum.iTot) + '</span></div>' +
             '<div><span>PvP (wyg./przeg.)</span><span>' + num(sum.pvpW) + ' / ' + num(sum.pvpL) + '</span></div>' +
             '<div><span>Śmierci</span><span>' + num(sum.deaths) + '</span></div>' +
+            '<div><span>Punkty ulepszeń</span><span>' + num(sum.ulep) + '</span></div>' +
             '<div><span>Bilans złota</span><span>' + ((sum.gIn - sum.gOut) > 0 ? '+' : (sum.gIn - sum.gOut) < 0 ? '−' : '') + num(Math.abs(sum.gIn - sum.gOut)) + '</span></div>';
     }
 
@@ -2161,7 +2388,15 @@
             const keys = Object.keys(activeDb().days).sort();
             when = keys.length ? 'Cała historia (' + keys[0] + ' … ' + keys[keys.length - 1] + ')' : 'Brak danych';
         }
-        win.querySelector('.mstat-when').textContent = isForeignLoading() ? 'Wczytywanie danych postaci…' : when;
+        if (isForeignLoading()) {
+            const sc = isScopeKey(S.ui.viewChar) ? mergedDb(S.ui.viewChar).scope : null;
+            when = 'Wczytywanie danych postaci…' + (sc ? ' (' + sc.ready + '/' + sc.total + ')' : '');
+        } else if (isScopeKey(S.ui.viewChar)) {
+            const w = scopeWorld(S.ui.viewChar);
+            const n = charsInScope(S.ui.viewChar).length;
+            when = (w ? 'Świat ' + w : 'Całe konto') + ' — suma ' + n + ' postaci · ' + when;
+        }
+        win.querySelector('.mstat-when').textContent = when;
 
         const netto = a.gIn - a.gOut;
         const signed = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + num(Math.abs(v));
@@ -2204,6 +2439,11 @@
             if (known.indexOf(k) === -1) html += sub('#9a9a9a', esc(k), num(a.i[k]), false);
         });
         html += '</div>';
+
+        html += '<div class="mstat-sec"><h4>Ulepszanie (przepalanie)</h4>' +
+            row('Punkty ulepszeń', num(a.ulep), a.ulep ? 'plus' : '') +
+            sub('#d9a441', 'Przepalone przedmioty', num(a.ulepN), !a.ulepN) +
+            '</div>';
 
         win.querySelector('.mstat-content').innerHTML = html;
 
