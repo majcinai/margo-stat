@@ -11,8 +11,8 @@
 // @connect      *.supabase.co
 // @connect      supabase.co
 // @run-at       document-start
-// @updateURL    https://raw.githubusercontent.com/majcinai/margo-stat/main/statystyki-dzienne.user
-// @downloadURL  https://raw.githubusercontent.com/majcinai/margo-stat/main/statystyki-dzienne.user
+// @updateURL    https://raw.githubusercontent.com/majcinai/margo-stat/main/statystyki-dzienne.user.js
+// @downloadURL  https://raw.githubusercontent.com/majcinai/margo-stat/main/statystyki-dzienne.user.js
 // ==/UserScript==
 
 (function () {
