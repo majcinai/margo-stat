@@ -1,0 +1,2292 @@
+// ==UserScript==
+// @name         Margonem - Statystyki dzienne
+// @namespace    margonem-daily-stats
+// @version      2.3
+// @description  Dzienne statystyki postaci: czas gry, zabite potwory wg rang, walki PvP, smierci, loot wg rang, bilans zlota i przebyte kratki. Dane per postac i per swiat, z kalendarzem do przegladania historii. Synchronizacja w chmurze (Supabase) miedzy komputerami + publiczny ranking dzienny i miesieczny (co godzine, z przeklikiwaniem kategorii). Recznie "wyciagany" widget z okna Konfiguracji gry, gdy na belce nie ma miejsca.
+// @match        https://*.margonem.pl/*
+// @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_deleteValue
+// @connect      *.supabase.co
+// @connect      supabase.co
+// @run-at       document-start
+// @updateURL    https://raw.githubusercontent.com/majcinai/margo-stat/main/statystyki-dzienne.user.js
+// @downloadURL  https://raw.githubusercontent.com/majcinai/margo-stat/main/statystyki-dzienne.user.js
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    // Skrypt dziala teraz w piaskownicy Tampermonkey (przez jawne @grant),
+    // wiec zwykle "window" NIE jest juz oknem strony - nie widac przez nie
+    // obiektow gry (Engine, API, $ itd.), ktore strona sama sobie ustawila.
+    // Do nich siegamy przez unsafeWindow, ktore zawsze wskazuje prawdziwe
+    // okno strony. Standardowe API przegladarki (document, localStorage,
+    // setTimeout, MutationObserver...) dzialaja tak samo jak wczesniej.
+    const GAME = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+
+    /* ==================================================================
+     *  KONFIGURACJA
+     * ================================================================== */
+    const CFG = {
+        // Godzina resetu doby (0 = polnoc lokalna). Np. 6 -> doba trwa 6:00-6:00.
+        dayResetHour: 0,
+        // Przerwa wieksza niz ta (ms) nie jest doliczana do czasu gry
+        // (uspienie komputera, zawieszona karta).
+        maxTickGapMs: 5 * 60 * 1000,
+        // Co ile zapisywac dane do localStorage.
+        saveIntervalMs: 5000,
+        // Ile dni historii trzymac.
+        keepDays: 400,
+        // Co ile sprawdzac pozycje postaci.
+        posPollMs: 250,
+        // Przy automatycznym odbiorze lupow gra nie wysyla pakietu okna
+        // lupow - przedmiot wpada od razu do plecaka. Przedmioty, ktore
+        // pojawia sie u postaci w tym oknie czasu po zakonczeniu walki,
+        // liczymy jako lup z potworow.
+        lootWindowMs: 15000,
+        // Skrot klawiszowy otwierajacy okno, np. { key: 's', alt: true }.
+        // null = brak skrotu (okno otwiera sie przyciskiem).
+        hotkey: null
+    };
+
+    // Synchronizacja w chmurze (Supabase) - dane te same na kazdym
+    // komputerze + publiczny ranking. Zeby to dzialalo, trzeba zalozyc
+    // darmowy projekt na supabase.com, wkleic tam SQL z pliku
+    // supabase_schema.sql i uzupelnic ponizsze dwie wartosci danymi
+    // z Project Settings -> Data API / API Keys. Bez tego dodatek dziala
+    // dokladnie jak dotychczas (tylko lokalnie + cross-storage gry).
+    const CLOUD = {
+        enabled: true,
+        url: 'https://TWOJ-PROJEKT.supabase.co',
+        anonKey: 'TWOJ-KLUCZ-ANON',
+        // co ile wysylac ostatnie dni biezacej postaci (ms)
+        pushIntervalMs: 30000,
+        // ile ostatnich dni wysylac przy kazdej synchronizacji
+        pushRecentDays: 3,
+        // co ile odswiezac wlasny wpis w publicznym rankingu (dzienny i miesieczny)
+        leaderboardIntervalMs: 60 * 60 * 1000
+    };
+
+    const RANKS = [
+        { id: 'zwykly', label: 'Zwykłe', color: '#cfc8b8' },
+        { id: 'elita1', label: 'Elita I', color: '#7ec97e' },
+        { id: 'elita2', label: 'Elita II', color: '#38b8eb' },
+        { id: 'elita3', label: 'Elita III', color: '#b98be0' },
+        { id: 'heros', label: 'Heros', color: '#fffb00' },
+        { id: 'colossus', label: 'Kolos', color: '#ff8400' },
+        { id: 'tytan', label: 'Tytan', color: '#ff5a5a' }
+    ];
+
+    const RARITIES = [
+        { id: 'common', label: 'Pospolite', color: '#d8d4c8' },
+        { id: 'upgraded', label: 'Ulepszone', color: '#ff59af' },
+        { id: 'unique', label: 'Unikatowe', color: '#fffb00' },
+        { id: 'heroic', label: 'Heroiczne', color: '#38b8eb' },
+        { id: 'legendary', label: 'Legendarne', color: '#ff8400' }
+    ];
+
+    // Kategorie publicznego rankingu - jedna pozycja na kazda liczbe, ktora
+    // dodatek sledzi (razem z podzialem na rangi potworow i rzadkosci
+    // przedmiotow), zeby dalo sie przeklikiwac osobne ranking np. tylko wg
+    // legendarnych przedmiotow. "get" wyciaga wartosc z obiektu totals
+    // (ma taki sam ksztalt jak rekord dnia), "fmt" formatuje ja do wyswietlenia.
+    const LB_CATEGORIES = [
+        { id: 'kTot', label: 'Potwory razem', get: (t) => t.kTot || 0, fmt: num },
+        { id: 'iTot', label: 'Przedmioty razem', get: (t) => t.iTot || 0, fmt: num },
+        { id: 'ms', label: 'Czas gry', get: (t) => t.ms || 0, fmt: formatDuration },
+        { id: 'steps', label: 'Przebyte kratki', get: (t) => t.steps || 0, fmt: num },
+        { id: 'gold', label: 'Bilans złota', get: (t) => (t.gIn || 0) - (t.gOut || 0),
+          fmt: (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + num(Math.abs(v)) },
+        { id: 'pvpW', label: 'PvP — wygrane', get: (t) => t.pvpW || 0, fmt: num },
+        { id: 'pvpL', label: 'PvP — przegrane', get: (t) => t.pvpL || 0, fmt: num },
+        { id: 'pvpD', label: 'PvP — nierozstrzygnięte', get: (t) => t.pvpD || 0, fmt: num },
+        { id: 'deaths', label: 'Zgony', get: (t) => t.deaths || 0, fmt: num }
+    ].concat(RANKS.map((r) => ({
+        id: 'k.' + r.id, label: 'Potwory: ' + r.label,
+        get: (t) => (t.k && t.k[r.id]) || 0, fmt: num
+    }))).concat(RARITIES.map((r) => ({
+        id: 'i.' + r.id, label: 'Przedmioty: ' + r.label,
+        get: (t) => (t.i && t.i[r.id]) || 0, fmt: num
+    })));
+
+    const MONTHS = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec',
+        'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
+    const WEEKDAYS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
+
+    const LOG = (...a) => console.log('%c[Statystyki]', 'color:#d9a441', ...a);
+
+    /* ==================================================================
+     *  NARZEDZIA
+     * ================================================================== */
+    const pad2 = (n) => (n < 10 ? '0' + n : String(n));
+
+    function dayKeyOf(ts) {
+        const d = new Date(ts);
+        if (CFG.dayResetHour) d.setHours(d.getHours() - CFG.dayResetHour);
+        return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    }
+
+    function todayKey() {
+        return dayKeyOf(Date.now());
+    }
+
+    function num(n) {
+        return Number(n || 0).toLocaleString('pl-PL');
+    }
+
+    function formatDuration(ms) {
+        const total = Math.floor((ms || 0) / 1000);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        if (h) return h + ' h ' + pad2(m) + ' min';
+        if (m) return m + ' min ' + pad2(s) + ' s';
+        return s + ' s';
+    }
+
+    function esc(t) {
+        return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    /* ==================================================================
+     *  PRZECHOWYWANIE DANYCH (localStorage, per swiat + postac)
+     * ================================================================== */
+    const LS_PREFIX = 'mstat_v1_';
+    const LS_INDEX = 'mstat_v1_index';
+    const LS_UI = 'mstat_v1_ui';
+
+    function emptyDay() {
+        return {
+            ms: 0, steps: 0, gIn: 0, gOut: 0,
+            kTot: 0, k: {},          // zabite potwory (razem / wg rang)
+            iTot: 0, i: {},          // lup z potworow (razem / wg rang)
+            pvpW: 0, pvpL: 0, pvpD: 0, // walki z graczami: wygrane / przegrane / nierozstrzygniete
+            deaths: 0                // smierci wlasnej postaci
+        };
+    }
+
+    // Rekordy dnia zapisane przez starsze wersje dodatku nie maja czesci
+    // pol. Dodawanie do brakujacego pola dawalo NaN (w zapisie: null),
+    // przez co liczniki PvP i zgonow stawaly w miejscu - stad naprawa.
+    function normalizeDay(d) {
+        if (!d || typeof d !== 'object') return emptyDay();
+        const nums = ['ms', 'steps', 'gIn', 'gOut', 'kTot', 'iTot', 'pvpW', 'pvpL', 'pvpD', 'deaths'];
+        nums.forEach((k) => {
+            const v = Number(d[k]);
+            d[k] = Number.isFinite(v) ? v : 0;
+        });
+        ['k', 'i'].forEach((map) => {
+            if (!d[map] || typeof d[map] !== 'object') { d[map] = {}; return; }
+            Object.keys(d[map]).forEach((key) => {
+                const v = Number(d[map][key]);
+                if (Number.isFinite(v)) d[map][key] = v; else delete d[map][key];
+            });
+        });
+        return d;
+    }
+
+    function emptyDb(nick, world) {
+        return { v: 1, nick: nick || '', world: world || '', days: {} };
+    }
+
+    function dbKey(world, charId) {
+        return LS_PREFIX + world + '_' + charId;
+    }
+
+    function loadDb(world, charId) {
+        try {
+            const raw = localStorage.getItem(dbKey(world, charId));
+            if (!raw) return emptyDb('', world);
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object' || !parsed.days) return emptyDb('', world);
+            Object.keys(parsed.days).forEach((k) => { parsed.days[k] = normalizeDay(parsed.days[k]); });
+            return parsed;
+        } catch (e) {
+            LOG('nie udalo sie odczytac danych', e);
+            return emptyDb('', world);
+        }
+    }
+
+    function saveDb(world, charId, db) {
+        try {
+            localStorage.setItem(dbKey(world, charId), JSON.stringify(db));
+            return true;
+        } catch (e) {
+            LOG('nie udalo sie zapisac danych', e);
+            return false;
+        }
+    }
+
+    function loadIndex() {
+        try {
+            return JSON.parse(localStorage.getItem(LS_INDEX)) || {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function saveIndex(idx) {
+        try { localStorage.setItem(LS_INDEX, JSON.stringify(idx)); } catch (e) {}
+    }
+
+    function registerChar(world, charId, nick) {
+        const idx = loadIndex();
+        const key = world + '|' + charId;
+        if (!idx[key] || idx[key].nick !== nick) {
+            idx[key] = { world: world, id: charId, nick: nick };
+            saveIndex(idx);
+        }
+    }
+
+    function loadUi() {
+        try { return JSON.parse(localStorage.getItem(LS_UI)) || {}; } catch (e) { return {}; }
+    }
+
+    function saveUi(ui) {
+        try { localStorage.setItem(LS_UI, JSON.stringify(ui)); } catch (e) {}
+    }
+
+    function pruneDays(db) {
+        const keys = Object.keys(db.days).sort();
+        while (keys.length > CFG.keepDays) {
+            delete db.days[keys.shift()];
+        }
+    }
+
+
+    /* ==================================================================
+     *  DANE MIEDZY SWIATAMI (cross-storage gry)
+     *  Kazdy swiat Margonem to osobna domena, wiec localStorage jednego
+     *  swiata nie widzi drugiego. Gra ma na to wlasny mechanizm: ramke
+     *  commons.margonem.pl/cross-storage, wspolna dla wszystkich swiatow.
+     *  Wrzucamy tam kopie statystyk, dzieki czemu z dowolnej postaci widac
+     *  dane wszystkich pozostalych.
+     * ================================================================== */
+    const CROSS_CHARS = 'mstat_v1_chars';        // spis postaci
+    const CROSS_DB = 'mstat_v1_db_';             // + <swiat>_<id postaci>
+    const CROSS_PUSH_MS = 30000;                 // jak czesto wysylac kopie
+    const CROSS_DAYS = 150;                      // ile dni kopiowac
+
+    let crossChars = {};                         // spis postaci z cross-storage
+    const foreignCache = new Map();              // 'swiat|id' -> baza albo 'loading'
+
+    function crossApi() {
+        try {
+            const CS = GAME.Engine.crossStorage;
+            if (CS && typeof CS.get === 'function' && typeof CS.set === 'function') return CS;
+        } catch (e) {}
+        return null;
+    }
+
+    function crossGet(key) {
+        const CS = crossApi();
+        if (!CS) return Promise.resolve(null);
+        try {
+            return Promise.resolve(CS.get(key)).then(function (v) {
+                if (v === null || v === undefined) return null;
+                if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return null; } }
+                return v;
+            }, function () { return null; });
+        } catch (e) { return Promise.resolve(null); }
+    }
+
+    function crossSet(key, value) {
+        const CS = crossApi();
+        if (!CS) return Promise.resolve(false);
+        try {
+            return Promise.resolve(CS.set(key, value)).then(function () { return true; }, function () { return false; });
+        } catch (e) { return Promise.resolve(false); }
+    }
+
+    function charKey(world, id) { return world + '|' + id; }
+    function myKey() { return charKey(S.world, S.charId); }
+    function crossDbKey(key) { return CROSS_DB + key.replace('|', '_'); }
+
+    // Do wspolnego magazynu idzie tylko ostatnie kilka miesiecy - pelna
+    // historia zostaje lokalnie, zeby nie zapychac wspoldzielonego miejsca.
+    function dbForCross() {
+        const keys = Object.keys(S.db.days).sort().slice(-CROSS_DAYS);
+        const days = {};
+        keys.forEach((k) => { days[k] = S.db.days[k]; });
+        return { v: 1, nick: S.nick, world: S.world, days: days };
+    }
+
+    function pushCrossDb(force) {
+        if (!crossApi() || !S.db) return;
+        const now = Date.now();
+        if (!force && now - (S.lastCrossPush || 0) < CROSS_PUSH_MS) return;
+        S.lastCrossPush = now;
+        crossSet(crossDbKey(myKey()), dbForCross());
+    }
+
+    function pushCrossChar() {
+        if (!crossApi()) return;
+        crossGet(CROSS_CHARS).then(function (idx) {
+            const list = (idx && typeof idx === 'object') ? idx : {};
+            list[myKey()] = { world: S.world, id: S.charId, nick: S.nick, updated: Date.now() };
+            crossChars = list;
+            crossSet(CROSS_CHARS, list);
+            if (win) renderCharSelect();
+        });
+    }
+
+    function loadCrossIndex() {
+        if (!crossApi()) return;
+        crossGet(CROSS_CHARS).then(function (idx) {
+            if (idx && typeof idx === 'object') {
+                crossChars = idx;
+                if (win) renderCharSelect();
+            }
+            pushCrossChar();
+        });
+    }
+
+    function loadForeign(key) {
+        foreignCache.set(key, 'loading');
+        crossGet(crossDbKey(key)).then(function (db) {
+            if (!db || typeof db !== 'object' || !db.days) {
+                foreignCache.set(key, emptyDb('', key.split('|')[0]));
+            } else {
+                Object.keys(db.days).forEach((k) => { db.days[k] = normalizeDay(db.days[k]); });
+                foreignCache.set(key, db);
+            }
+            if (S.ui.viewChar === key && snapAfterSwitch) { snapToAvailableDay(); snapAfterSwitch = false; }
+            if (isOpen() && S.ui.viewChar === key) renderAll();
+        });
+    }
+
+    // Po przelaczeniu postaci wybrany dzien czesto jest u niej pusty
+    // (np. wczoraj gralo sie kims innym) - przeskakujemy wtedy na jej
+    // ostatni dzien z danymi, zeby nie patrzec na same zera.
+    let snapAfterSwitch = false;
+
+    function snapToAvailableDay() {
+        const db = activeDb();
+        if (!db || db.days[S.ui.selDay]) return;
+        const keys = Object.keys(db.days).sort();
+        if (!keys.length) return;
+        const last = keys[keys.length - 1];
+        S.ui.selDay = last;
+        S.ui.year = parseInt(last.slice(0, 4), 10);
+        S.ui.month = parseInt(last.slice(5, 7), 10) - 1;
+        saveUi(S.ui);
+    }
+
+    function isForeignLoading() {
+        const sel = S.ui.viewChar;
+        return !!(sel && sel !== myKey() && foreignCache.get(sel) === 'loading');
+    }
+
+    /* ==================================================================
+     *  DANE W CHMURZE (Supabase)
+     *  Cross-storage gry (wyzej) dziala tylko w obrebie jednej przegladarki
+     *  / jednego komputera. Zeby miec te same dane wszedzie i pokazac
+     *  publiczny ranking, dodatek moze dodatkowo synchronizowac sie z
+     *  wlasna baza w Supabase (Postgres + REST + logowanie). Wlasne dane
+     *  (player_days, characters) sa prywatne - widoczne i edytowalne tylko
+     *  przez zalogowanego wlasciciela (RLS po auth.uid() - patrz
+     *  supabase_schema.sql). Do publicznej tabeli leaderboard kazdy
+     *  wysyla wylacznie swoj wlasny wiersz, i to najwyzej raz na dobe.
+     * ================================================================== */
+    const CLOUD_SESSION_KEY = 'mstat_v1_session';
+    const CLOUD_LAST_LB_KEY = 'mstat_v1_lb_push';
+
+    // Magazyn Tampermonkey - tu trzyma sie token logowania (localStorage
+    // pozostaje na dane samych statystyk, jak dotychczas).
+    function gmSet(key, value) {
+        try { if (typeof GM_setValue === 'function') { GM_setValue(key, value); return; } } catch (e) {}
+        try { localStorage.setItem('mstat_gm_' + key, JSON.stringify(value)); } catch (e) {}
+    }
+
+    function gmGet(key, def) {
+        try {
+            if (typeof GM_getValue === 'function') {
+                const v = GM_getValue(key, undefined);
+                return v === undefined ? def : v;
+            }
+        } catch (e) {}
+        try {
+            const raw = localStorage.getItem('mstat_gm_' + key);
+            return raw === null ? def : JSON.parse(raw);
+        } catch (e) { return def; }
+    }
+
+    function gmDel(key) {
+        try { if (typeof GM_deleteValue === 'function') { GM_deleteValue(key); return; } } catch (e) {}
+        try { localStorage.removeItem('mstat_gm_' + key); } catch (e) {}
+    }
+
+    // Cienki wrapper na GM_xmlhttpRequest - w odroznieniu od zwyklego
+    // fetch() omija CORS/CSP strony gry, wiec dziala bez wzgledu na to,
+    // co margonem.pl pozwala laczyc zwyklemu skryptowi strony.
+    function gmRequest(opts) {
+        return new Promise(function (resolve, reject) {
+            if (typeof GM_xmlhttpRequest !== 'function') { reject(new Error('brak GM_xmlhttpRequest')); return; }
+            try {
+                GM_xmlhttpRequest(Object.assign({
+                    timeout: 15000,
+                    onload: function (res) { resolve(res); },
+                    onerror: function () { reject(new Error('blad sieci')); },
+                    ontimeout: function () { reject(new Error('przekroczono czas oczekiwania')); }
+                }, opts));
+            } catch (e) { reject(e); }
+        });
+    }
+
+    function cloudReady() {
+        return !!(CLOUD.enabled && CLOUD.url && CLOUD.anonKey &&
+            CLOUD.url.indexOf('TWOJ-PROJEKT') === -1 && CLOUD.anonKey.indexOf('TWOJ-KLUCZ') === -1);
+    }
+
+    const cloud = {
+        session: null,          // { access_token, refresh_token, expires_at, user_id, email }
+        status: 'idle',         // idle | syncing | ok | error
+        error: '',
+        lastPush: 0,
+        lastLbPush: gmGet(CLOUD_LAST_LB_KEY, 0),
+        chars: [],               // wlasne postacie wg chmury (wszystkie komputery/swiaty)
+        lbRows: { day: null, month: null },       // ostatnio pobrany publiczny ranking, per okres
+        lbLoading: { day: false, month: false }
+    };
+
+    function loadCloudSession() {
+        const s = gmGet(CLOUD_SESSION_KEY, null);
+        if (s && s.access_token && s.refresh_token) cloud.session = s;
+    }
+
+    function saveCloudSession(s) {
+        cloud.session = s;
+        gmSet(CLOUD_SESSION_KEY, s);
+    }
+
+    function clearCloudSession() {
+        cloud.session = null;
+        gmDel(CLOUD_SESSION_KEY);
+    }
+
+    function authUrl(path) { return CLOUD.url.replace(/\/+$/, '') + '/auth/v1' + path; }
+    function restUrl(path) { return CLOUD.url.replace(/\/+$/, '') + '/rest/v1' + path; }
+    function parseJsonSafe(text) { try { return JSON.parse(text); } catch (e) { return null; } }
+
+    function applyAuthResponse(json) {
+        if (!json || !json.access_token) {
+            throw new Error((json && (json.error_description || json.msg || json.error)) || 'nieznany blad logowania');
+        }
+        const expiresAt = Date.now() + (Number(json.expires_in || 3600) * 1000);
+        const email = (json.user && json.user.email) || (cloud.session && cloud.session.email) || '';
+        const userId = (json.user && json.user.id) || json.user_id || (cloud.session && cloud.session.user_id);
+        saveCloudSession({
+            access_token: json.access_token,
+            refresh_token: json.refresh_token,
+            expires_at: expiresAt,
+            user_id: userId,
+            email: email
+        });
+    }
+
+    function cloudSignUp(email, password) {
+        if (!cloudReady()) return Promise.reject(new Error('chmura nie skonfigurowana (uzupelnij CLOUD.url / CLOUD.anonKey)'));
+        return gmRequest({
+            method: 'POST', url: authUrl('/signup'),
+            headers: { 'Content-Type': 'application/json', apikey: CLOUD.anonKey },
+            data: JSON.stringify({ email: email, password: password })
+        }).then(function (res) {
+            const json = parseJsonSafe(res.responseText);
+            if (res.status >= 400) throw new Error((json && (json.error_description || json.msg || json.error)) || ('blad rejestracji (' + res.status + ')'));
+            if (json && json.access_token) { applyAuthResponse(json); return { needsConfirm: false }; }
+            // Supabase domyslnie wymaga potwierdzenia e-mail - wtedy rejestracja
+            // nie zwraca od razu tokenu, trzeba kliknac link z maila i sie zalogowac.
+            return { needsConfirm: true };
+        });
+    }
+
+    function cloudSignIn(email, password) {
+        if (!cloudReady()) return Promise.reject(new Error('chmura nie skonfigurowana (uzupelnij CLOUD.url / CLOUD.anonKey)'));
+        return gmRequest({
+            method: 'POST', url: authUrl('/token?grant_type=password'),
+            headers: { 'Content-Type': 'application/json', apikey: CLOUD.anonKey },
+            data: JSON.stringify({ email: email, password: password })
+        }).then(function (res) {
+            const json = parseJsonSafe(res.responseText);
+            if (res.status >= 400) throw new Error((json && (json.error_description || json.msg || json.error)) || ('blad logowania (' + res.status + ')'));
+            applyAuthResponse(json);
+        });
+    }
+
+    function cloudSignOut() {
+        clearCloudSession();
+        cloud.status = 'idle';
+        cloud.error = '';
+        cloud.chars = [];
+        cloud.lbRows = { day: null, month: null };
+    }
+
+    // Odswieza token, gdy jest juz bliski wygasniecia. Gdy odswiezenie sie
+    // nie uda (np. token odwolany), czysci sesje - trzeba zalogowac sie ponownie.
+    function ensureFreshToken() {
+        if (!cloud.session) return Promise.resolve(false);
+        if (Date.now() < cloud.session.expires_at - 60000) return Promise.resolve(true);
+        return gmRequest({
+            method: 'POST', url: authUrl('/token?grant_type=refresh_token'),
+            headers: { 'Content-Type': 'application/json', apikey: CLOUD.anonKey },
+            data: JSON.stringify({ refresh_token: cloud.session.refresh_token })
+        }).then(function (res) {
+            const json = parseJsonSafe(res.responseText);
+            if (res.status >= 400 || !json || !json.access_token) { clearCloudSession(); return false; }
+            applyAuthResponse(json);
+            return true;
+        }, function () { return false; });
+    }
+
+    // Wywolanie REST (PostgREST) z automatycznym odswiezeniem tokenu.
+    function cloudRest(method, path, body, extraHeaders) {
+        return ensureFreshToken().then(function () {
+            const headers = Object.assign({
+                'Content-Type': 'application/json',
+                apikey: CLOUD.anonKey,
+                Authorization: 'Bearer ' + ((cloud.session && cloud.session.access_token) || CLOUD.anonKey)
+            }, extraHeaders || {});
+            return gmRequest({
+                method: method, url: restUrl(path), headers: headers,
+                data: body !== undefined ? JSON.stringify(body) : undefined
+            });
+        }).then(function (res) {
+            if (res.status === 401 && cloud.session) {
+                clearCloudSession();
+                throw new Error('sesja wygasla - zaloguj sie ponownie');
+            }
+            if (res.status >= 400) {
+                const json = parseJsonSafe(res.responseText);
+                throw new Error((json && (json.message || json.hint)) || ('blad serwera (' + res.status + ')'));
+            }
+            return parseJsonSafe(res.responseText);
+        });
+    }
+
+    /* ---------- wysylanie wlasnych danych ---------- */
+    function pushCloudCharacter() {
+        if (!cloudReady() || !cloud.session || !S.db) return;
+        cloudRest('POST', '/characters', [{
+            user_id: cloud.session.user_id, world: S.world, char_id: S.charId,
+            nick: S.nick, updated_at: new Date().toISOString()
+        }], { Prefer: 'resolution=merge-duplicates,return=minimal' }).catch(function (e) {
+            LOG('chmura: nie udalo sie zapisac postaci', e.message || e);
+        });
+    }
+
+    function pushCloudDays(force) {
+        if (!cloudReady() || !cloud.session || !S.db) return;
+        const now = Date.now();
+        if (!force && now - cloud.lastPush < CLOUD.pushIntervalMs) return;
+        cloud.lastPush = now;
+        const keys = Object.keys(S.db.days).sort();
+        const recent = keys.slice(-CLOUD.pushRecentDays);
+        if (!recent.length) return;
+        const rows = recent.map(function (day) {
+            return {
+                user_id: cloud.session.user_id, world: S.world, char_id: S.charId,
+                day: day, nick: S.nick, data: normalizeDay(S.db.days[day]),
+                updated_at: new Date().toISOString()
+            };
+        });
+        cloud.status = 'syncing';
+        cloudRest('POST', '/player_days', rows, { Prefer: 'resolution=merge-duplicates,return=minimal' }).then(function () {
+            cloud.status = 'ok'; cloud.error = '';
+            if (win && S.ui.showCloudPanel) renderCloudStatus();
+        }).catch(function (e) {
+            cloud.status = 'error'; cloud.error = e.message || String(e);
+            LOG('chmura: nie udalo sie zsynchronizowac dni', cloud.error);
+            if (win && S.ui.showCloudPanel) renderCloudStatus();
+        });
+    }
+
+    function monthKey() {
+        const d = new Date();
+        return d.getFullYear() + '-' + pad2(d.getMonth() + 1);
+    }
+
+    function ownDayTotals() {
+        return normalizeDay(S.db.days[todayKey()] || emptyDay());
+    }
+
+    function ownMonthTotals() {
+        const prefix = monthKey() + '-';
+        const out = emptyDay();
+        Object.keys(S.db.days).forEach(function (k) { if (k.indexOf(prefix) === 0) addDayInto(out, S.db.days[k]); });
+        return out;
+    }
+
+    // Ranking dzienny i miesieczny to dwa osobne wiersze per postac (patrz
+    // kolumny period/period_key w supabase_schema.sql) - kazdy z nich
+    // aktualizujemy co godzine, wiec ranking odswieza sie zdecydowanie
+    // czesciej niz raz na dobe.
+    function pushCloudLeaderboard(force) {
+        if (!cloudReady() || !cloud.session || !S.db) return;
+        const now = Date.now();
+        if (!force && now - cloud.lastLbPush < CLOUD.leaderboardIntervalMs) return;
+        cloud.lastLbPush = now;
+        gmSet(CLOUD_LAST_LB_KEY, now);
+        const iso = new Date().toISOString();
+        cloudRest('POST', '/leaderboard', [
+            { user_id: cloud.session.user_id, world: S.world, char_id: S.charId, nick: S.nick,
+              period: 'day', period_key: todayKey(), totals: ownDayTotals(), updated_at: iso },
+            { user_id: cloud.session.user_id, world: S.world, char_id: S.charId, nick: S.nick,
+              period: 'month', period_key: monthKey(), totals: ownMonthTotals(), updated_at: iso }
+        ], { Prefer: 'resolution=merge-duplicates,return=minimal' }).catch(function (e) {
+            LOG('chmura: nie udalo sie zaktualizowac rankingu', e.message || e);
+        });
+    }
+
+    /* ---------- odczyt wlasnych postaci z innych komputerow ---------- */
+    function pullCloudCharacters() {
+        if (!cloudReady() || !cloud.session) return Promise.resolve([]);
+        return cloudRest('GET', '/characters?select=world,char_id,nick&order=world.asc').then(function (rows) {
+            cloud.chars = Array.isArray(rows) ? rows : [];
+            if (win) renderCharSelect();
+            return cloud.chars;
+        }).catch(function (e) {
+            LOG('chmura: nie udalo sie pobrac listy postaci', e.message || e);
+            return [];
+        });
+    }
+
+    function pullCloudDb(world, charId) {
+        const key = charKey(world, charId);
+        foreignCache.set(key, 'loading');
+        if (!cloudReady() || !cloud.session) { foreignCache.set(key, emptyDb('', world)); return; }
+        cloudRest('GET', '/player_days?select=day,nick,data&world=eq.' + encodeURIComponent(world) +
+            '&char_id=eq.' + encodeURIComponent(charId) + '&order=day.asc')
+            .then(function (rows) {
+                const db = emptyDb('', world);
+                (rows || []).forEach(function (r) {
+                    db.days[r.day] = normalizeDay(r.data);
+                    if (r.nick) db.nick = r.nick;
+                });
+                foreignCache.set(key, db);
+                if (S.ui.viewChar === key && snapAfterSwitch) { snapToAvailableDay(); snapAfterSwitch = false; }
+                if (isOpen() && S.ui.viewChar === key) renderAll();
+            }).catch(function (e) {
+                LOG('chmura: nie udalo sie pobrac danych postaci', e.message || e);
+                foreignCache.set(key, emptyDb('', world));
+                if (isOpen() && S.ui.viewChar === key) renderAll();
+            });
+    }
+
+    /* ---------- publiczny ranking (dzienny i miesieczny) ---------- */
+    function pullLeaderboard(period) {
+        period = period === 'month' ? 'month' : 'day';
+        if (!cloudReady()) return Promise.resolve([]);
+        cloud.lbLoading[period] = true;
+        const key = period === 'month' ? monthKey() : todayKey();
+        return cloudRest('GET', '/leaderboard?select=world,char_id,nick,totals,updated_at' +
+            '&period=eq.' + period + '&period_key=eq.' + encodeURIComponent(key) + '&order=updated_at.desc&limit=500')
+            .then(function (rows) {
+                cloud.lbRows[period] = Array.isArray(rows) ? rows : [];
+                cloud.lbLoading[period] = false;
+                if (win && (S.ui.view || 'stats') === 'ranking') renderRanking();
+                return cloud.lbRows[period];
+            }).catch(function (e) {
+                cloud.lbLoading[period] = false;
+                LOG('chmura: nie udalo sie pobrac rankingu', e.message || e);
+                if (win && (S.ui.view || 'stats') === 'ranking') renderRanking();
+                return [];
+            });
+    }
+
+    function afterCloudLogin() {
+        renderCloudStatus();
+        pushCloudCharacter();
+        pushCloudDays(true);
+        pushCloudLeaderboard(true);
+        pullCloudCharacters();
+        pullLeaderboard('day');
+        pullLeaderboard('month');
+    }
+
+    /* ==================================================================
+     *  STAN
+     * ================================================================== */
+    const S = {
+        world: '',
+        charId: null,
+        nick: '',
+        db: null,
+        dirty: false,
+        lastTick: Date.now(),
+        lastGold: null,
+        lastX: null,
+        lastY: null,
+        lastMap: null,
+        knownItems: new Set(), // id przedmiotow, ktore postac juz miala
+        lootPool: new Map(),   // id przedmiotow lezacych w oknie lupow
+        lootSource: null,      // zrodlo ostatniego okna lupow ('fight', ...)
+        lastFightEnd: 0,       // znacznik czasu konca ostatniej walki
+        lastFightSig: '',      // odcisk ostatniej rozliczonej walki
+        lastCrossPush: 0,      // kiedy ostatnio wyslano kopie do cross-storage
+        ui: null
+    };
+
+    function today() {
+        const key = todayKey();
+        if (!S.db.days[key]) {
+            S.db.days[key] = emptyDay();
+            pruneDays(S.db);
+        }
+        return normalizeDay(S.db.days[key]);
+    }
+
+    function markDirty() {
+        S.dirty = true;
+    }
+
+    function flush(force) {
+        if (!S.db || (!S.dirty && !force)) return;
+        S.db.nick = S.nick;
+        S.db.world = S.world;
+        if (saveDb(S.world, S.charId, S.db)) S.dirty = false;
+        pushCrossDb(force);
+        pushCloudDays(force);
+        pushCloudLeaderboard(false);
+    }
+
+    /* ==================================================================
+     *  ZLICZANIE
+     * ================================================================== */
+    function rankFromWt(wt) {
+        const w = Number(wt || 0);
+        let kind = null;
+        try {
+            if (typeof GAME.getDescriptionOfKindMonster === 'function') {
+                kind = GAME.getDescriptionOfKindMonster(w);
+            }
+        } catch (e) { kind = null; }
+        if (!kind) {
+            // Zapasowa tabela (zgodna z funkcja gry).
+            if (w >= 100) kind = 'tytan';
+            else if (w >= 90) kind = 'colossus';
+            else if (w >= 80) kind = 'heros';
+            else if (w >= 30) kind = 'elita3';
+            else if (w >= 20) kind = 'elita2';
+            else if (w >= 10) kind = 'elita1';
+        }
+        return kind || 'zwykly';
+    }
+
+    function addKill(wt) {
+        const rank = rankFromWt(wt);
+        const d = today();
+        d.kTot = (d.kTot || 0) + 1;
+        d.k[rank] = (d.k[rank] || 0) + 1;
+        markDirty();
+    }
+
+    function addItem(rarity) {
+        const r = rarity || 'common';
+        const d = today();
+        d.iTot = (d.iTot || 0) + 1;
+        d.i[r] = (d.i[r] || 0) + 1;
+        markDirty();
+    }
+
+    function addPvp(result) {
+        const d = today();
+        if (result === 'win') d.pvpW = (d.pvpW || 0) + 1;
+        else if (result === 'loss') d.pvpL = (d.pvpL || 0) + 1;
+        else d.pvpD = (d.pvpD || 0) + 1;
+        markDirty();
+    }
+
+    function addDeath() {
+        const d = today();
+        d.deaths = (d.deaths || 0) + 1;
+        markDirty();
+    }
+
+    function addGold(delta) {
+        if (!delta) return;
+        const d = today();
+        if (delta > 0) d.gIn = (d.gIn || 0) + delta; else d.gOut = (d.gOut || 0) - delta;
+        markDirty();
+    }
+
+    function addSteps(n) {
+        if (n <= 0) return;
+        const d = today();
+        d.steps = (d.steps || 0) + n;
+        markDirty();
+    }
+
+    /* ==================================================================
+     *  PODPIECIE POD GRE
+     *  Dane bierzemy z dwoch zrodel:
+     *   - odpytywanie Engine.hero (czas, zloto, kratki) - nie zalezy od
+     *     formatu pakietow, wiec jest odporne na zmiany po stronie gry,
+     *   - surowe pakiety z serwera (walki i przedmioty), bo oficjalne
+     *     API dodatkow nie zglasza zdarzen walki na wszystkich swiatach.
+     * ================================================================== */
+
+    let sawPacket = false;
+    const seenEv = [];   // ostatnio przetworzone pakiety (ochrona przed dublami)
+
+    function handlePacket(raw) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
+        const d = (raw.d && typeof raw.d === 'object' && (raw.d.f || raw.d.item || raw.d.loot)) ? raw.d : raw;
+        if (!d.f && !d.item && !d.loot) return;
+        sawPacket = true;
+        if (!S.db) return;   // dodatek jeszcze nie wystartowal
+
+        // Ten sam pakiet moze dotrzec kilkoma kanalami naraz - kazdy ma
+        // wlasny znacznik czasu "ev", wiec powtorki odrzucamy.
+        const stamp = raw.ev !== undefined ? raw.ev : d.ev;
+        if (stamp !== undefined) {
+            if (seenEv.indexOf(stamp) !== -1) return;
+            seenEv.push(stamp);
+            if (seenEv.length > 60) seenEv.shift();
+        }
+        if (d.f) { try { handleFight(d.f); } catch (e) { LOG('blad walki', e); } }
+        if (d.loot) { try { handleLootPacket(d.loot); } catch (e) { LOG('blad lupow', e); } }
+        if (d.item) { try { handleItemPacket(d.item); } catch (e) { LOG('blad przedmiotow', e); } }
+    }
+
+    function onWsMessage(ev) {
+        try {
+            const raw = ev && ev.data !== undefined ? ev.data : ev;
+            if (typeof raw === 'string') {
+                if (raw.charAt(0) !== '{') return;
+                handlePacket(JSON.parse(raw));
+            } else if (raw && typeof raw === 'object') {
+                handlePacket(raw);
+            }
+        } catch (e) { /* nie kazdy pakiet to nasz JSON */ }
+    }
+
+    // Podmieniamy konstruktor WebSocketa, zanim gra utworzy polaczenie
+    // (@run-at document-start). Dzieki temu lapiemy tez kazde ponowne
+    // polaczenie po zerwaniu sesji.
+    function patchWebSocket() {
+        const Orig = GAME.WebSocket;
+        if (!Orig || Orig.__mstatPatched) return;
+        function Patched(url, protocols) {
+            const ws = protocols === undefined ? new Orig(url) : new Orig(url, protocols);
+            try { ws.addEventListener('message', onWsMessage); } catch (e) {}
+            return ws;
+        }
+        Patched.prototype = Orig.prototype;
+        ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach((k) => { Patched[k] = Orig[k]; });
+        Patched.__mstatPatched = true;
+        try { GAME.WebSocket = Patched; } catch (e) { LOG('nie udalo sie podpiac WebSocketa', e); }
+    }
+
+    // Glowne wejscie: gra przepuszcza kazdy pakiet z serwera przez
+    // Engine.communication. Podmiana konstruktora WebSocketa nie wystarcza,
+    // bo na czesci swiatow polaczenie powstaje poza zasiegiem skryptu.
+    // Podpiecie odswiezamy cyklicznie, zeby przetrwalo zerwanie sesji.
+    function wrapMethod(obj, name, before) {
+        if (!obj || typeof obj[name] !== 'function') return false;
+        if (obj[name].__mstatWrapped) return true;
+        const orig = obj[name];
+        const wrapper = function () {
+            try { before.apply(null, arguments); } catch (e) {}
+            return orig.apply(this, arguments);
+        };
+        wrapper.__mstatWrapped = true;
+        try { obj[name] = wrapper; } catch (e) { return false; }
+        return true;
+    }
+
+    function installPacketHooks() {
+        let C = null;
+        try { C = GAME.Engine && GAME.Engine.communication; } catch (e) { return; }
+        if (!C) return;
+        wrapMethod(C, 'onMessageWebSocket', onWsMessage);
+        wrapMethod(C, 'successData', function (data) { handlePacket(data); });
+    }
+
+    /* ---------- walki ---------- */
+    const FIGHT = { w: {}, myteam: null, counted: false };
+
+    function hpValue(hp) {
+        if (hp === undefined || hp === null) return null;
+        if (typeof hp === 'number') return hp;
+        if (typeof hp === 'string') { const n = parseFloat(hp); return isNaN(n) ? null : n; }
+        if (Array.isArray(hp)) return hpValue(hp[0]);
+        if (typeof hp === 'object') {
+            const named = ['value', 'v', 'now', 'cur', 'current', 'act', 'hp', 'val'];
+            for (let i = 0; i < named.length; i++) {
+                if (hp[named[i]] !== undefined) return hpValue(hp[named[i]]);
+            }
+            for (const k in hp) {
+                if (/max/i.test(k)) continue;
+                if (typeof hp[k] === 'number') return hp[k];
+            }
+        }
+        return null;
+    }
+
+    function handleFight(f) {
+        if (f.init) { FIGHT.w = {}; FIGHT.counted = false; FIGHT.myteam = null; }
+        if (f.myteam !== undefined) FIGHT.myteam = f.myteam;
+
+        if (f.w && typeof f.w === 'object') {
+            for (const id in f.w) {
+                const src = f.w[id];
+                if (!src || typeof src !== 'object') continue;
+                const prev = FIGHT.w[id] || {};
+                if (src.npc !== undefined) prev.npc = src.npc;
+                if (src.team !== undefined) prev.team = src.team;
+                if (src.wt !== undefined) prev.wt = src.wt;
+                if (src.name !== undefined) prev.name = src.name;
+                if (src.hp !== undefined) {
+                    const v = hpValue(src.hp);
+                    if (v !== null) prev.hp = v;
+                }
+                FIGHT.w[id] = prev;
+            }
+        }
+
+        if (f.endBattle) settleBattle();
+    }
+
+    // Rozliczenie zakonczonej walki: zabite potwory, wynik starcia
+    // z graczami i ewentualna smierc wlasnej postaci.
+    function settleBattle() {
+        if (FIGHT.counted) return;
+        FIGHT.counted = true;
+
+        // Gra potrafi przyslac ten sam pakiet konca walki kilka razy
+        // (kazdy z ponownym "init"), wiec rozpoznajemy powtorki po
+        // odcisku: ci sami wojownicy z tym samym stanem HP.
+        const ids = Object.keys(FIGHT.w).sort();
+        const sig = ids.map((id) => id + ':' + FIGHT.w[id].hp).join('|');
+        const now = Date.now();
+        if (sig && sig === S.lastFightSig && now - S.lastFightEnd < 5000) {
+            S.lastFightEnd = now;
+            return;
+        }
+        S.lastFightSig = sig;
+        S.lastFightEnd = now;
+
+        const me = String(heroId());
+        const knownTeam = FIGHT.myteam !== null && FIGHT.myteam !== undefined;
+        let killed = 0;          // zabite potwory
+        let enemyPlayers = 0;    // wrodzy gracze w tej walce
+        let enemyAlive = 0;      // zywi po stronie przeciwnej
+        let allyAlive = 0;       // zywi po naszej stronie
+        let heroDied = false;
+
+        for (const id in FIGHT.w) {
+            const w = FIGHT.w[id];
+            if (!w) continue;
+            const alive = !(w.hp !== undefined && w.hp !== null && w.hp <= 0);
+            const enemy = knownTeam && w.team !== undefined && w.team !== FIGHT.myteam;
+
+            if (enemy) {
+                if (alive) enemyAlive++;
+                if (!w.npc) enemyPlayers++;
+                else if (!alive) { addKill(w.wt); killed++; }
+            } else if (knownTeam && w.team === FIGHT.myteam) {
+                if (alive) allyAlive++;
+            }
+
+            if (id === me && !alive) heroDied = true;
+        }
+
+        if (heroDied) addDeath();
+
+        // Walka liczy sie jako PvP, gdy po drugiej stronie stal chocby
+        // jeden gracz (a nie tylko potwory czy przywolance).
+        let pvp = null;
+        if (enemyPlayers > 0 && knownTeam) {
+            if (enemyAlive === 0 && allyAlive > 0) pvp = 'win';
+            else if (allyAlive === 0) pvp = 'loss';
+            else pvp = 'draw';
+            addPvp(pvp);
+        }
+
+        if (killed || pvp || heroDied) {
+            LOG('walka rozliczona — potwory: ' + killed +
+                (pvp ? ', PvP: ' + pvp : '') + (heroDied ? ', zgon postaci' : ''));
+            refreshIfOpen();
+        }
+    }
+
+    /* ---------- lupy i przedmioty ---------- */
+    // Okno lupow: { source: 'fight', states: { <id przedmiotu>: stan } }.
+    function handleLootPacket(loot) {
+        if (!loot || typeof loot !== 'object') return;
+        if (loot.source !== undefined) S.lootSource = loot.source;
+        const states = loot.states;
+        if (states && typeof states === 'object') {
+            const fromFight = (S.lootSource || loot.source) === 'fight';
+            Object.keys(states).forEach((id) => {
+                if (fromFight) S.lootPool.set(String(id), true);
+            });
+        }
+    }
+
+    function heroId() {
+        try { return GAME.Engine.hero.d.id; } catch (e) { return null; }
+    }
+
+    function handleItemPacket(items) {
+        if (!items || typeof items !== 'object') return;
+        const me = heroId();
+        const now = Date.now();
+        for (const key in items) {
+            const it = items[key];
+            if (!it || typeof it !== 'object') continue;
+            const id = String(it.id !== undefined ? it.id : key);
+
+            if (it.del) { S.lootPool.delete(id); S.knownItems.delete(id); continue; }
+
+            const loc = it.loc;
+            if (loc === 'l' || loc === 'k') {           // lezy w oknie lupow
+                S.lootPool.set(id, true);
+                continue;
+            }
+            if (loc !== 'g') continue;                  // nie trafilo do postaci
+            if (me !== null && it.own !== undefined && it.own !== me) continue;
+            if (S.knownItems.has(id)) continue;         // juz je znamy (przenosiny w plecaku)
+            S.knownItems.add(id);
+
+            const fromLoot = S.lootPool.has(id);
+            const shortlyAfterFight = now - S.lastFightEnd < CFG.lootWindowMs;
+            if (!fromLoot && !shortlyAfterFight) continue;   // zakup, handel, nagroda - nie liczymy
+            S.lootPool.delete(id);
+
+            addItem(rarityFromStat(it.stat) || rarityOfItemId(id) || 'common');
+            refreshIfOpen();
+        }
+    }
+
+    function rarityFromStat(stat) {
+        const m = /(?:^|;)rarity=([a-z]+)/.exec(stat || '');
+        return m ? m[1] : null;
+    }
+
+    function rarityOfItemId(id) {
+        try {
+            const it = GAME.Engine.items.getItemById(id);
+            const d = it && (it.d || it);
+            return rarityFromStat(d && d.stat);
+        } catch (e) { return null; }
+    }
+
+    // Przedmioty, ktore postac ma juz na starcie, zapamietujemy, zeby
+    // nie policzyc ich przy pierwszym pakiecie po zalogowaniu.
+    function seedKnownItems() {
+        try {
+            const views = GAME.Engine.items.getViews();
+            Object.keys(views || {}).forEach((id) => S.knownItems.add(String(id)));
+        } catch (e) {}
+    }
+
+    /* ---------- odpytywanie stanu postaci ---------- */
+    function currentMapId() {
+        try { return GAME.Engine.map.d.id; } catch (e) { return null; }
+    }
+
+    function notePosition() {
+        let h;
+        try { h = GAME.Engine.hero.d; } catch (e) { return; }
+        if (!h) return;
+        const map = currentMapId();
+        if (map !== S.lastMap) {
+            S.lastMap = map;
+            S.lastX = h.x; S.lastY = h.y;
+            return;
+        }
+        if (S.lastX === null) { S.lastX = h.x; S.lastY = h.y; return; }
+        const dist = Math.abs(h.x - S.lastX) + Math.abs(h.y - S.lastY);
+        S.lastX = h.x; S.lastY = h.y;
+        if (dist > 0 && dist <= 4) addSteps(dist);
+    }
+
+    function noteGold() {
+        let h;
+        try { h = GAME.Engine.hero.d; } catch (e) { return; }
+        if (!h || typeof h.gold !== 'number') return;
+        if (S.lastGold === null) { S.lastGold = h.gold; return; }
+        const delta = h.gold - S.lastGold;
+        S.lastGold = h.gold;
+        if (delta) { addGold(delta); refreshIfOpen(); }
+    }
+
+    function noteTime() {
+        const now = Date.now();
+        const delta = now - S.lastTick;
+        S.lastTick = now;
+        if (delta <= 0 || delta > CFG.maxTickGapMs) return;
+        const d = today();
+        d.ms = (d.ms || 0) + delta;
+        markDirty();
+    }
+
+    function attachHooks() {
+        installPacketHooks();
+        seedKnownItems();
+        // Ekwipunek dociera chwile po zalogowaniu - dosiewamy pozniej,
+        // zeby zaden przedmiot "z plecaka" nie policzyl sie jako lup.
+        setTimeout(seedKnownItems, 5000);
+        setTimeout(seedKnownItems, 15000);
+        setInterval(function () { installPacketHooks(); ensureWidget(); ensureConfigButton(); }, 2000);
+
+        setInterval(function () { noteTime(); noteGold(); notePosition(); }, 1000);
+        setInterval(notePosition, CFG.posPollMs);
+        setInterval(function () { flush(false); }, CFG.saveIntervalMs);
+        setInterval(function () {
+            if (isOpen()) ensureWindowAttached();
+            S.ui.open = isOpen();
+            if (isOpen() && S.ui.view !== 'ranking' && S.ui.range === 'day' && S.ui.selDay === todayKey()) renderStats();
+        }, 1000);
+
+        window.addEventListener('beforeunload', function () { noteTime(); flush(true); });
+        loadCrossIndex();
+
+        loadCloudSession();
+        if (cloud.session) {
+            pushCloudCharacter();
+            pullCloudCharacters();
+        }
+        // Token wygasa po godzinie - odswiezamy go w tle, zeby synchronizacja
+        // nie przerywala sie przy dluzszej sesji w grze.
+        setInterval(function () { if (cloud.session) ensureFreshToken(); }, 5 * 60 * 1000);
+
+        document.addEventListener('visibilitychange', function () { noteTime(); flush(true); });
+
+        setTimeout(function () {
+            if (!sawPacket) LOG('uwaga: nie widze pakietow z serwera — walki i przedmioty moga sie nie liczyc.');
+        }, 90000);
+    }
+
+    /* ==================================================================
+     *  INTERFEJS
+     * ================================================================== */
+    let win = null;        // element z trescia statystyk
+    let winFrame = null;   // wlasna ramka okna (gdy brak natywnego)
+    let nativeWnd = null;  // natywne okno gry
+    let toggleBtn = null;  // zapasowy przycisk (gdy brak widgetu)
+
+    const CSS = `
+    .mstat-btn {
+        position: fixed; z-index: 9998; width: 34px; height: 34px;
+        display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(to bottom, #3a3024, #221c14);
+        border: 1px solid #6b5738; border-radius: 4px;
+        color: #d9a441; font: bold 11px/1 Verdana, Arial, sans-serif;
+        letter-spacing: 0.5px; cursor: pointer; user-select: none;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+    }
+    .mstat-btn:hover { border-color: #d9a441; color: #f0d089; }
+    @keyframes mstat-blink { 0%, 100% { box-shadow: 0 2px 6px rgba(0,0,0,0.6); } 50% { box-shadow: 0 0 0 4px rgba(217,164,65,0.55); } }
+    .mstat-btn-blink { animation: mstat-blink 0.5s ease-in-out 3; }
+
+    /* przycisk wstrzykiwany do natywnego okna Konfiguracji gry */
+    .mstat-pullout-btn {
+        display: inline-flex; align-items: center; margin-left: 8px; padding: 4px 10px;
+        background: linear-gradient(to bottom, #3a3024, #221c14);
+        border: 1px solid #6b5738; border-radius: 4px; color: #d9a441;
+        font: bold 11px Verdana, Arial, sans-serif; cursor: pointer; user-select: none;
+        white-space: nowrap;
+    }
+    .mstat-pullout-btn:hover { border-color: #d9a441; color: #f0d089; }
+
+    /* natywne okno gry ma sie dopasowac do naszej tresci */
+    .c-window.mstat-native,
+    .c-window.mstat-native > .content,
+    .c-window.mstat-native .inner-content {
+        width: auto !important; height: auto !important; max-height: none !important;
+    }
+
+    .mstat-root {
+        width: 560px; max-width: calc(100vw - 40px);
+        /* Na malych rozdzielczosciach cale okno (nie tylko wnetrze
+           kalendarza) ma dostac jeden pasek przewijania, zamiast wychodzic
+           poza ekran - stad limit na 75% wysokosci widoku. */
+        max-height: 75vh; overflow-y: auto;
+        color: #cfc8b8; font: 12px/1.45 Verdana, Arial, sans-serif;
+        user-select: none;
+    }
+    .mstat-topbar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 6px 8px 2px; }
+    .mstat-topbar select {
+        background: #1b1710; color: #cfc8b8;
+        border: 1px solid #55462e; border-radius: 3px; font: 11px Verdana, Arial, sans-serif;
+        padding: 1px 3px; max-width: 220px; cursor: pointer;
+    }
+    .mstat-cloudbtn {
+        width: 20px; height: 20px; line-height: 18px; text-align: center;
+        border: 1px solid #55462e; border-radius: 3px; cursor: pointer; color: #a29a88;
+        font-size: 12px;
+    }
+    .mstat-cloudbtn:hover { border-color: #d9a441; color: #d9a441; }
+
+    .mstat-cloud {
+        margin: 0 8px 6px; padding: 6px 8px; background: rgba(217,164,65,0.06);
+        border: 1px solid #38301f; border-radius: 4px; font-size: 11px;
+    }
+    .mstat-cloud-status { color: #a29a88; margin-bottom: 4px; }
+    .mstat-cloud-form { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    .mstat-cloud-form input {
+        background: #1b1710; color: #cfc8b8; border: 1px solid #55462e; border-radius: 3px;
+        padding: 3px 5px; font: 11px Verdana, Arial, sans-serif; flex: 1 1 140px; min-width: 0;
+    }
+    .mstat-cloud-actions { display: flex; gap: 4px; }
+    .mstat-cloud-actions button, .mstat-cloud-logged button {
+        background: #1b1710; color: #cfc8b8; border: 1px solid #55462e; border-radius: 3px;
+        padding: 2px 8px; cursor: pointer; font: 11px Verdana, Arial, sans-serif;
+    }
+    .mstat-cloud-actions button:hover, .mstat-cloud-logged button:hover { border-color: #d9a441; color: #d9a441; }
+    .mstat-cloud-msg { flex-basis: 100%; color: #e08080; }
+    .mstat-cloud-logged { display: flex; align-items: center; gap: 8px; }
+    .mstat-cloud-logged .mstat-cloud-email2 { color: #d9a441; }
+
+    .mstat-mode { display: flex; gap: 4px; margin: 0 8px 8px; }
+    .mstat-mode span {
+        flex: 1 1 auto; text-align: center; padding: 3px 0; font-size: 11px; font-weight: bold;
+        border: 1px solid #55462e; border-radius: 3px; cursor: pointer; color: #b8b0a0;
+    }
+    .mstat-mode span.on { border-color: #d9a441; color: #d9a441; background: rgba(217,164,65,0.15); }
+    .mstat-mode span:hover { border-color: #d9a441; }
+
+    .mstat-ranking { padding: 4px 10px 10px; }
+    .mstat-rank-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+    .mstat-rank-period { display: flex; gap: 4px; }
+    .mstat-rank-period span {
+        padding: 3px 10px; font-size: 11px; font-weight: bold;
+        border: 1px solid #55462e; border-radius: 3px; cursor: pointer; color: #b8b0a0;
+    }
+    .mstat-rank-period span.on { border-color: #d9a441; color: #d9a441; background: rgba(217,164,65,0.15); }
+    .mstat-rank-period span:hover { border-color: #d9a441; }
+    .mstat-rank-cat {
+        background: #1b1710; color: #cfc8b8; border: 1px solid #55462e; border-radius: 3px;
+        font: 11px Verdana, Arial, sans-serif; padding: 3px 4px; cursor: pointer; flex: 1 1 180px; min-width: 0;
+    }
+    .mstat-lb { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .mstat-lb th {
+        text-align: left; color: #d9a441; border-bottom: 1px solid #38301f; padding: 3px 6px;
+    }
+    .mstat-lb td { padding: 3px 6px; border-bottom: 1px solid #221c14; color: #cfc8b8; }
+    .mstat-lb tr.mstat-lb-me td { background: rgba(217,164,65,0.14); color: #f0e6d0; font-weight: bold; }
+
+    /* zapasowa ramka okna, gdy interfejs gry jest niedostepny */
+    .mstat-win {
+        position: fixed; z-index: 9999;
+        background: linear-gradient(to bottom, #211c16, #16120e);
+        border: 1px solid #6b5738; border-radius: 5px;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.75);
+    }
+    .mstat-head {
+        display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+        background: linear-gradient(to bottom, #3a3024, #262017);
+        border-bottom: 1px solid #6b5738; border-radius: 4px 4px 0 0;
+        cursor: move;
+    }
+    .mstat-title { color: #d9a441; font-weight: bold; letter-spacing: 0.4px; margin-right: auto; }
+    .mstat-close {
+        width: 18px; height: 18px; line-height: 16px; text-align: center;
+        border: 1px solid #6b5738; border-radius: 3px; color: #cfc8b8;
+        cursor: pointer; font-size: 13px;
+    }
+    .mstat-close:hover { color: #ff8a8a; border-color: #ff8a8a; }
+
+    .mstat-body {
+        display: flex; align-items: stretch;
+    }
+    .mstat-left { width: 218px; padding: 8px; border-right: 1px solid #38301f; }
+    .mstat-right { flex: 1 1 auto; padding: 8px 10px; min-width: 0; }
+
+    .mstat-calhead { display: flex; align-items: center; margin-bottom: 6px; }
+    .mstat-calhead b { flex: 1 1 auto; text-align: center; color: #d9a441; font-size: 12px; }
+    .mstat-nav {
+        width: 20px; height: 20px; line-height: 18px; text-align: center; cursor: pointer;
+        border: 1px solid #55462e; border-radius: 3px; color: #cfc8b8;
+    }
+    .mstat-nav:hover { border-color: #d9a441; color: #d9a441; }
+
+    .mstat-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    .mstat-wd { text-align: center; font-size: 10px; color: #8a8272; padding-bottom: 2px; }
+    .mstat-day {
+        position: relative; height: 24px; line-height: 24px; text-align: center;
+        font-size: 11px; border: 1px solid transparent; border-radius: 3px;
+        color: #6f6858; cursor: default;
+    }
+    .mstat-day.mstat-has { color: #cfc8b8; cursor: pointer; background: rgba(217,164,65,0.10); }
+    .mstat-day.mstat-has:hover { border-color: #d9a441; }
+    .mstat-day.mstat-today { font-weight: bold; text-decoration: underline; }
+    .mstat-day.mstat-sel { border-color: #d9a441; background: rgba(217,164,65,0.28); color: #f0e6d0; }
+    .mstat-day.mstat-empty { visibility: hidden; }
+
+    .mstat-monthsum {
+        margin-top: 10px; padding-top: 7px; border-top: 1px solid #38301f;
+        font-size: 11px; color: #a29a88;
+    }
+    .mstat-monthsum b { color: #d9a441; display: block; margin-bottom: 3px; font-size: 11px; }
+    .mstat-monthsum div { display: flex; gap: 6px; }
+    .mstat-monthsum div span:last-child { margin-left: auto; color: #cfc8b8; }
+
+    .mstat-range { display: flex; gap: 4px; margin-bottom: 8px; }
+    .mstat-range span {
+        flex: 1 1 auto; text-align: center; padding: 3px 0; font-size: 11px;
+        border: 1px solid #55462e; border-radius: 3px; cursor: pointer; color: #b8b0a0;
+    }
+    .mstat-range span.on { border-color: #d9a441; color: #d9a441; background: rgba(217,164,65,0.15); }
+    .mstat-range span:hover { border-color: #d9a441; }
+
+    .mstat-when { color: #8a8272; font-size: 11px; margin-bottom: 8px; }
+    .mstat-sec { margin-bottom: 9px; }
+    .mstat-sec > h4 {
+        margin: 0 0 3px; font-size: 11px; color: #d9a441; font-weight: bold;
+        border-bottom: 1px solid #38301f; padding-bottom: 2px;
+    }
+    .mstat-row { display: flex; align-items: baseline; gap: 6px; }
+    .mstat-row .k { color: #a29a88; }
+    .mstat-row .v { margin-left: auto; color: #f0e6d0; font-weight: bold; }
+    .mstat-row .v.plus { color: #7ec97e; }
+    .mstat-row .v.minus { color: #e08080; }
+    .mstat-sub { display: flex; align-items: baseline; gap: 6px; padding-left: 8px; font-size: 11px; }
+    .mstat-sub .k { color: #a29a88; }
+    .mstat-sub .v { margin-left: auto; }
+    .mstat-sub.zero { opacity: 0.38; }
+    .mstat-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+
+    .mstat-foot {
+        display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+        border-top: 1px solid #38301f; font-size: 11px; color: #8a8272;
+    }
+    .mstat-foot button {
+        background: #1b1710; color: #cfc8b8; border: 1px solid #55462e;
+        border-radius: 3px; padding: 2px 7px; cursor: pointer;
+        font: 11px Verdana, Arial, sans-serif;
+    }
+    .mstat-foot button:hover { border-color: #d9a441; color: #d9a441; }
+    .mstat-foot .sp { margin-left: auto; }
+    `;
+
+    function injectCss() {
+        const s = document.createElement('style');
+        s.id = 'mstat-style';
+        s.textContent = CSS;
+        document.head.appendChild(s);
+    }
+
+    function makeDraggable(el, handle, onEnd) {
+        let sx = 0, sy = 0, ox = 0, oy = 0, moved = false, dragging = false;
+        handle.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            dragging = true; moved = false;
+            sx = e.clientX; sy = e.clientY;
+            const r = el.getBoundingClientRect();
+            ox = r.left; oy = r.top;
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            const dx = e.clientX - sx, dy = e.clientY - sy;
+            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+            const nx = Math.max(0, Math.min(window.innerWidth - 40, ox + dx));
+            const ny = Math.max(0, Math.min(window.innerHeight - 20, oy + dy));
+            el.style.left = nx + 'px';
+            el.style.top = ny + 'px';
+            el.style.right = 'auto';
+            el.style.bottom = 'auto';
+        });
+        document.addEventListener('mouseup', () => {
+            if (!dragging) return;
+            dragging = false;
+            if (onEnd) onEnd(moved, parseInt(el.style.left, 10), parseInt(el.style.top, 10));
+        });
+    }
+
+    /* ---------- agregacja ---------- */
+    function addDayInto(out, d) {
+        if (!d) return;
+        out.ms += d.ms || 0;
+        out.steps += d.steps || 0;
+        out.gIn += d.gIn || 0;
+        out.gOut += d.gOut || 0;
+        out.kTot += d.kTot || 0;
+        out.iTot += d.iTot || 0;
+        out.pvpW += d.pvpW || 0;
+        out.pvpL += d.pvpL || 0;
+        out.pvpD += d.pvpD || 0;
+        out.deaths += d.deaths || 0;
+        Object.keys(d.k || {}).forEach((r) => { out.k[r] = (out.k[r] || 0) + d.k[r]; });
+        Object.keys(d.i || {}).forEach((r) => { out.i[r] = (out.i[r] || 0) + d.i[r]; });
+    }
+
+    function activeDb() {
+        const sel = S.ui.viewChar;
+        if (!sel || sel === myKey()) return S.db;
+        const parts = sel.split('|');
+        // Postac z tego samego swiata mamy w lokalnym magazynie.
+        if (parts[0] === S.world) {
+            const local = loadDb(parts[0], parts[1]);
+            if (Object.keys(local.days).length) return local;
+        }
+        const cached = foreignCache.get(sel);
+        if (cached && cached !== 'loading') return cached;
+        if (!cached) {
+            // Postac znana z chmury (inny komputer tego samego konta) -
+            // pobieramy ja stamtad, bo to zrodlo pewniejsze niz
+            // cross-storage gry (dziala tylko w obrebie jednej przegladarki).
+            const inCloud = cloud.session && cloud.chars.some((c) => charKey(c.world, c.char_id) === sel);
+            if (inCloud) pullCloudDb(parts[0], parts[1]);
+            else loadForeign(sel);
+        }
+        return emptyDb('', parts[0]);
+    }
+
+    function aggregate() {
+        const db = activeDb();
+        const out = emptyDay();
+        if (S.ui.range === 'day') {
+            addDayInto(out, db.days[S.ui.selDay]);
+        } else if (S.ui.range === 'month') {
+            const prefix = S.ui.year + '-' + pad2(S.ui.month + 1) + '-';
+            Object.keys(db.days).forEach((k) => { if (k.indexOf(prefix) === 0) addDayInto(out, db.days[k]); });
+        } else {
+            Object.keys(db.days).forEach((k) => addDayInto(out, db.days[k]));
+        }
+        return out;
+    }
+
+    /* ---------- okno: natywne okno gry, z zapasowym wlasnym ---------- */
+    const WIDGET_KEY = 'mstat';          // klasa w interfejsie: widget-mstat
+    const WINDOW_KEY = 'MSTAT_STATS';
+
+    function gameWidgetApi() {
+        try {
+            const W = GAME.Engine.widgetManager;
+            if (W && typeof W.addKeyToDefaultWidgetSet === 'function' &&
+                typeof W.createOneWidget === 'function' &&
+                typeof W.getDefaultWidgetSet === 'function') return W;
+        } catch (e) {}
+        return null;
+    }
+
+    function buildContent() {
+        const root = document.createElement('div');
+        root.className = 'mstat-root';
+        root.innerHTML =
+            '<div class="mstat-topbar">' +
+                '<select class="mstat-char"></select>' +
+                '<span class="mstat-cloudbtn" data-act="cloud" title="Synchronizacja w chmurze">☁</span>' +
+            '</div>' +
+            '<div class="mstat-cloud" style="display:none">' +
+                '<div class="mstat-cloud-status"></div>' +
+                '<div class="mstat-cloud-form">' +
+                    '<input type="email" class="mstat-cloud-email" placeholder="e-mail" autocomplete="username">' +
+                    '<input type="password" class="mstat-cloud-pass" placeholder="hasło" autocomplete="current-password">' +
+                    '<div class="mstat-cloud-actions">' +
+                        '<button data-cloud-act="login">Zaloguj</button>' +
+                        '<button data-cloud-act="register">Zarejestruj</button>' +
+                    '</div>' +
+                    '<div class="mstat-cloud-msg"></div>' +
+                '</div>' +
+                '<div class="mstat-cloud-logged" style="display:none">' +
+                    '<span class="mstat-cloud-email2"></span>' +
+                    '<button data-cloud-act="logout">Wyloguj</button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="mstat-mode">' +
+                '<span data-mode="stats">Statystyki</span>' +
+                '<span data-mode="ranking">Ranking</span>' +
+            '</div>' +
+            '<div class="mstat-body">' +
+                '<div class="mstat-left">' +
+                    '<div class="mstat-calhead">' +
+                        '<div class="mstat-nav" data-nav="-1">‹</div>' +
+                        '<b class="mstat-month"></b>' +
+                        '<div class="mstat-nav" data-nav="1">›</div>' +
+                    '</div>' +
+                    '<div class="mstat-grid mstat-cal"></div>' +
+                    '<div class="mstat-monthsum"></div>' +
+                '</div>' +
+                '<div class="mstat-right">' +
+                    '<div class="mstat-range">' +
+                        '<span data-range="day">Dzień</span>' +
+                        '<span data-range="month">Miesiąc</span>' +
+                        '<span data-range="all">Łącznie</span>' +
+                    '</div>' +
+                    '<div class="mstat-when"></div>' +
+                    '<div class="mstat-content"></div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="mstat-ranking" style="display:none">' +
+                '<div class="mstat-rank-controls">' +
+                    '<div class="mstat-rank-period">' +
+                        '<span data-rankperiod="day">Dzień</span>' +
+                        '<span data-rankperiod="month">Miesiąc</span>' +
+                    '</div>' +
+                    '<select class="mstat-rank-cat">' +
+                        LB_CATEGORIES.map((c) => '<option value="' + esc(c.id) + '">' + esc(c.label) + '</option>').join('') +
+                    '</select>' +
+                '</div>' +
+                '<div class="mstat-rank-when mstat-when"></div>' +
+                '<div class="mstat-rank-table"></div>' +
+            '</div>' +
+            '<div class="mstat-foot">' +
+                '<button data-act="today">Dziś</button>' +
+            '</div>';
+        return root;
+    }
+
+    // Natywne okno gry (c-window). Tworzymy je przez windowManager, dzieki
+    // czemu dostajemy ramke, naglowek, przycisk zamykania i przeciaganie
+    // dokladnie takie jak w reszcie interfejsu.
+    function createGameWindow(content) {
+        try {
+            const WM = GAME.Engine.windowManager;
+            const WD = GAME.Engine.windowsData;
+            if (!WM || typeof WM.add !== 'function' || !WD || !WD.name || !GAME.$) return null;
+
+            WD.name[WINDOW_KEY] = WINDOW_KEY;
+            // closeable/draggable trzeba podac jawnie - bez nich gra nie
+            // podpina ani krzyzyka, ani przeciagania (okno wyglada dobrze,
+            // ale nic nie robi).
+            const wnd = WM.add({
+                nameWindow: WINDOW_KEY,
+                name: WINDOW_KEY,
+                par: {},
+                content: GAME.$(content),
+                widget: WIDGET_KEY,
+                position: WD.position.NOT_UPDATE,
+                closeable: true,
+                draggable: true,
+                containment: 'body',
+                onclose: function () { toggleWindow(false); },
+                onstopdrag: function () { saveWindowPos(); }
+            });
+            if (!wnd || !wnd.$ || !wnd.$[0]) return null;
+
+            // Gra trzyma swoje okna w warstwie alertow i sama nimi tam
+            // zarzadza; wpiecie w warstwe interfejsu konczylo sie tym, ze
+            // przy pierwszej akcji w grze okno wypadalo z DOM.
+            if (typeof wnd.addToAlertLayer === 'function') wnd.addToAlertLayer();
+            else GAME.Engine.interface.get$interfaceLayer().append(wnd.$);
+            if (typeof wnd.setTransparentWindow === 'function') wnd.setTransparentWindow();
+            if (typeof wnd.addClass === 'function') wnd.addClass('mstat-native');
+            if (typeof wnd.title === 'function') wnd.title('Statystyki');
+            if (typeof wnd.initClose === 'function') wnd.initClose();
+
+            // Gdyby gra nie wstawila naszej tresci sama.
+            const el = wnd.$[0];
+            if (!el.contains(content)) {
+                const target = el.querySelector('.inner-content') || el.querySelector('.content') || el;
+                target.appendChild(content);
+            }
+
+            applySavedPos(el);
+            watchPosition(el);
+            wnd.hide();
+            return wnd;
+        } catch (e) {
+            LOG('nie udalo sie utworzyc natywnego okna', e);
+            return null;
+        }
+    }
+
+    function applySavedPos(el) {
+        const pos = S.ui.winPos;
+        el.style.left = (pos && pos.x !== undefined ? pos.x : 140) + 'px';
+        el.style.top = (pos && pos.y !== undefined ? pos.y : 90) + 'px';
+    }
+
+    function saveWindowPos() {
+        const el = nativeWnd && nativeWnd.$ && nativeWnd.$[0];
+        if (!el) return;
+        const x = parseInt(el.style.left, 10);
+        const y = parseInt(el.style.top, 10);
+        if (!isNaN(x) && !isNaN(y)) { S.ui.winPos = { x: x, y: y }; saveUi(S.ui); }
+    }
+
+    // Gra zapisuje pozycje okien po swojemu i nie zna naszego okna,
+    // wiec pilnujemy jej sami.
+    function watchPosition(el) {
+        let timer = null;
+        new MutationObserver(function () {
+            clearTimeout(timer);
+            timer = setTimeout(function () {
+                const x = parseInt(el.style.left, 10);
+                const y = parseInt(el.style.top, 10);
+                if (!isNaN(x) && !isNaN(y)) { S.ui.winPos = { x: x, y: y }; saveUi(S.ui); }
+            }, 400);
+        }).observe(el, { attributes: true, attributeFilter: ['style'] });
+    }
+
+    function buildOwnWindow(content) {
+        const frame = document.createElement('div');
+        frame.className = 'mstat-win';
+        frame.style.display = 'none';
+        frame.innerHTML =
+            '<div class="mstat-head">' +
+                '<span class="mstat-title">Statystyki</span>' +
+                '<div class="mstat-close" title="Zamknij">×</div>' +
+            '</div>';
+        frame.appendChild(content);
+        document.body.appendChild(frame);
+
+        const pos = S.ui.winPos;
+        frame.style.left = (pos && pos.x !== undefined ? pos.x : 140) + 'px';
+        frame.style.top = (pos && pos.y !== undefined ? pos.y : 90) + 'px';
+        makeDraggable(frame, frame.querySelector('.mstat-head'), function (moved, x, y) {
+            S.ui.winPos = { x: x, y: y };
+            saveUi(S.ui);
+        });
+        frame.querySelector('.mstat-close').addEventListener('click', function () { toggleWindow(false); });
+        return frame;
+    }
+
+    function bindContentEvents() {
+        win.querySelector('.mstat-cal').addEventListener('click', (e) => {
+            const cell = e.target.closest('.mstat-day');
+            if (!cell || !cell.dataset.day) return;
+            S.ui.selDay = cell.dataset.day;
+            S.ui.range = 'day';
+            snapAfterSwitch = false;
+            saveUi(S.ui);
+            renderAll();
+        });
+
+        win.querySelectorAll('.mstat-nav').forEach((n) => {
+            n.addEventListener('click', () => {
+                const step = parseInt(n.dataset.nav, 10);
+                let m = S.ui.month + step, y = S.ui.year;
+                if (m < 0) { m = 11; y--; }
+                if (m > 11) { m = 0; y++; }
+                S.ui.month = m; S.ui.year = y;
+                saveUi(S.ui);
+                renderAll();
+            });
+        });
+
+        win.querySelector('.mstat-range').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-range]');
+            if (!b) return;
+            S.ui.range = b.dataset.range;
+            saveUi(S.ui);
+            renderAll();
+        });
+
+        win.querySelector('.mstat-char').addEventListener('change', (e) => {
+            S.ui.viewChar = e.target.value;
+            snapAfterSwitch = true;
+            saveUi(S.ui);
+            snapToAvailableDay();
+            if (!isForeignLoading()) snapAfterSwitch = false;
+            renderAll();
+        });
+
+        win.querySelector('.mstat-foot').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-act]');
+            if (!b) return;
+            if (b.dataset.act === 'today') {
+                const t = new Date();
+                S.ui.year = t.getFullYear();
+                S.ui.month = t.getMonth();
+                S.ui.selDay = todayKey();
+                S.ui.range = 'day';
+                saveUi(S.ui);
+                renderAll();
+            }
+        });
+
+        win.querySelector('.mstat-mode').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-mode]');
+            if (!b) return;
+            S.ui.view = b.dataset.mode;
+            saveUi(S.ui);
+            renderAll();
+        });
+
+        win.querySelector('.mstat-rank-period').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-rankperiod]');
+            if (!b) return;
+            S.ui.rankPeriod = b.dataset.rankperiod;
+            saveUi(S.ui);
+            renderRanking();
+        });
+
+        win.querySelector('.mstat-rank-cat').addEventListener('change', (e) => {
+            S.ui.rankCategory = e.target.value;
+            saveUi(S.ui);
+            renderRanking();
+        });
+
+        win.querySelector('.mstat-cloudbtn').addEventListener('click', () => {
+            S.ui.showCloudPanel = !S.ui.showCloudPanel;
+            saveUi(S.ui);
+            renderCloudStatus();
+        });
+
+        win.querySelector('.mstat-cloud').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-cloud-act]');
+            if (!b) return;
+            const act = b.dataset.cloudAct;
+            const msgEl = win.querySelector('.mstat-cloud-msg');
+
+            if (act === 'logout') {
+                cloudSignOut();
+                renderCloudStatus();
+                return;
+            }
+
+            const email = win.querySelector('.mstat-cloud-email').value.trim();
+            const pass = win.querySelector('.mstat-cloud-pass').value;
+            if (!email || !pass) { msgEl.textContent = 'Podaj e-mail i hasło.'; return; }
+            msgEl.textContent = 'Proszę czekać…';
+            b.disabled = true;
+
+            if (act === 'login') {
+                cloudSignIn(email, pass).then(() => {
+                    msgEl.textContent = '';
+                    afterCloudLogin();
+                }).catch((err) => { msgEl.textContent = err.message || String(err); })
+                  .then(() => { b.disabled = false; });
+            } else if (act === 'register') {
+                cloudSignUp(email, pass).then((r) => {
+                    if (r.needsConfirm) {
+                        msgEl.textContent = 'Konto utworzone — potwierdź e-mail (link w skrzynce), potem się zaloguj.';
+                    } else {
+                        msgEl.textContent = '';
+                        afterCloudLogin();
+                    }
+                }).catch((err) => { msgEl.textContent = err.message || String(err); })
+                  .then(() => { b.disabled = false; });
+            }
+        });
+    }
+
+    function buildWindow() {
+        win = buildContent();
+        nativeWnd = createGameWindow(win);
+        if (!nativeWnd) {
+            winFrame = buildOwnWindow(win);
+            LOG('natywne okno gry niedostepne — uzywam wlasnego');
+        }
+        bindContentEvents();
+    }
+
+    /* ---------- widget w belce interfejsu ---------- */
+    // Gra rysuje ikone widgetu na dziecku .icon, biorac wycinek ze wspolnego
+    // arkusza buttony.png. Dla nieznanego klucza wychodzil z tego przypadkowy
+    // kawalek grafiki, dlatego podmieniamy tlo tego elementu na wlasne.
+    const WIDGET_ICON =
+        "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E" +
+        "%3Cpath d='M3 2v18a1 1 0 001 1h18' fill='none' stroke='%23dfe7ef' stroke-width='2' stroke-linecap='round'/%3E" +
+        "%3Cg fill='%23dfe7ef'%3E%3Crect x='6.5' y='13' width='4' height='5.5' rx='1'/%3E" +
+        "%3Crect x='12.25' y='9' width='4' height='9.5' rx='1'/%3E" +
+        "%3Crect x='18' y='5' width='4' height='13.5' rx='1'/%3E%3C/g%3E%3C/svg%3E\")";
+
+    function injectWidgetIcon() {
+        if (document.getElementById('mstat-widget-icon')) return;
+        const st = document.createElement('style');
+        st.id = 'mstat-widget-icon';
+        st.textContent =
+            '.widget-' + WIDGET_KEY + ' .icon {' +
+            ' background-image: ' + WIDGET_ICON + ' !important;' +
+            ' background-position: center !important;' +
+            ' background-size: 26px 26px !important;' +
+            ' background-repeat: no-repeat !important; }';
+        document.head.appendChild(st);
+    }
+
+    let widgetCreated = false;
+
+    function buildWidget() {
+        injectWidgetIcon();
+        const W = gameWidgetApi();
+        if (W) {
+            try {
+                const saved = S.ui.widgetPos || {};
+                let slot = saved.index;
+                let pos = saved.pos;
+                if (slot === undefined || slot === null || !pos) {
+                    let free = null;
+                    try { free = W.getFirstEmptyWidgetSlot(); } catch (e) {}
+                    slot = free && free.slot !== undefined ? free.slot : 0;
+                    pos = (free && free.container) || 'top-left';
+                }
+
+                W.addKeyToDefaultWidgetSet(WIDGET_KEY, slot, pos, 'Statystyki dzienne', 'blue',
+                    function () { toggleWindow(); });
+                const set = W.getDefaultWidgetSet();
+                // Bez tego gra uzna widget za nieaktywny i go nie narysuje.
+                if (set && set[WIDGET_KEY]) set[WIDGET_KEY].default = true;
+                W.createOneWidget(WIDGET_KEY, {}, false);
+
+                const el = document.querySelector('.widget-' + WIDGET_KEY);
+                if (el) {
+                    widgetCreated = true;
+                    watchWidgetSlot(el);
+                    LOG('widget dodany do belki: ' + pos + ', slot ' + slot);
+                    // Gra potrafi przydzielic widgetowi miejsce w danych, ale
+                    // nie zmiescic go realnie na belce (np. gdy belka jest juz
+                    // pelna) - element wtedy istnieje w DOM, ale nie jest
+                    // widoczny. Gdy ktos wczesniej "wyciagnal" widget przez
+                    // okno Konfiguracji, dodatkowy zapasowy przycisk zostaje
+                    // wlaczony na zawsze, na wszelki wypadek.
+                    if (S.ui.extraFallback) buildFallbackButton();
+                    return;
+                }
+            } catch (e) {
+                LOG('nie udalo sie dodac widgetu do interfejsu', e);
+            }
+        }
+        buildFallbackButton();
+    }
+
+    // Gra nie zapisze pozycji nieznanego jej widgetu, wiec zapamietujemy
+    // ja sami i przy nastepnym starcie tworzymy widget w tym samym miejscu.
+    // Gra potrafi przebudowac belki (np. po zmianie rozdzielczosci albo
+    // wznowieniu sesji) i skasowac nasz przycisk - wtedy tworzymy go na nowo.
+    function ensureWidget() {
+        if (!widgetCreated || !gameWidgetApi()) return;
+        if (document.querySelector('.widget-' + WIDGET_KEY)) return;
+        try {
+            GAME.Engine.widgetManager.createOneWidget(WIDGET_KEY, {}, false);
+            const el = document.querySelector('.widget-' + WIDGET_KEY);
+            if (el) watchWidgetSlot(el);
+        } catch (e) {}
+    }
+
+    function watchWidgetSlot(el) {
+        let timer = null;
+        new MutationObserver(function () {
+            clearTimeout(timer);
+            timer = setTimeout(function () {
+                const index = parseInt(el.getAttribute('widget-index'), 10);
+                const pos = el.getAttribute('widget-pos');
+                if (!isNaN(index) && pos) { S.ui.widgetPos = { index: index, pos: pos }; saveUi(S.ui); }
+            }, 400);
+        }).observe(el, { attributes: true, attributeFilter: ['widget-index', 'widget-pos'] });
+    }
+
+    function buildFallbackButton() {
+        if (toggleBtn && document.body.contains(toggleBtn)) return; // juz istnieje
+        toggleBtn = document.createElement('div');
+        toggleBtn.className = 'mstat-btn';
+        toggleBtn.title = 'Statystyki dzienne';
+        toggleBtn.textContent = 'STAT';
+        const p = S.ui.btnPos;
+        toggleBtn.style.left = (p && p.x !== undefined ? p.x : 8) + 'px';
+        toggleBtn.style.top = (p && p.y !== undefined ? p.y : 120) + 'px';
+        document.body.appendChild(toggleBtn);
+        makeDraggable(toggleBtn, toggleBtn, function (moved, x, y) {
+            S.ui.btnPos = { x: x, y: y };
+            saveUi(S.ui);
+            if (!moved) toggleWindow();
+        });
+    }
+
+    // "Wyciagniecie" widgetu: gdy na belkach nie ma juz miejsca, gra potrafi
+    // przydzielic naszemu widgetowi slot "na papierze", ale nie narysowac go
+    // tak, by byl faktycznie widoczny/klikalny. Ten przycisk (wstrzykniety do
+    // natywnego okna Konfiguracji gry) daje gwarantowany dostep do okna
+    // statystyk niezaleznie od tego, czy na belce jest miejsce: probuje
+    // ponownie dolozyc widget na belce, a dodatkowo raz na zawsze wlacza
+    // zapasowy, przeciagalny przycisk "STAT" na ekranie.
+    function pulloutWidget() {
+        S.ui.extraFallback = true;
+        saveUi(S.ui);
+        ensureWidget();
+        buildFallbackButton();
+        if (toggleBtn) { toggleBtn.style.display = 'flex'; toggleBtn.classList.add('mstat-btn-blink'); setTimeout(() => toggleBtn && toggleBtn.classList.remove('mstat-btn-blink'), 1500); }
+    }
+
+    // Dokladamy wlasny przycisk do natywnego okna Konfiguracji gry (zakladka
+    // "Sterowanie", pasek z "Ustaw domyslne widgety"). Okno jest tworzone
+    // przez gre na nowo przy kazdym otwarciu, wiec sprawdzamy to cyklicznie.
+    function ensureConfigButton() {
+        try {
+            document.querySelectorAll('.hot-keys-config-buttons.save-card-button').forEach((c) => {
+                if (c.querySelector('.mstat-pullout-btn')) return;
+                const btn = document.createElement('div');
+                btn.className = 'mstat-pullout-btn';
+                btn.textContent = 'Wyciągnij widget Statystyk';
+                btn.title = 'Gdy widget dodatku nie mieści się na belce - kliknij, żeby zawsze mieć do niego dostęp (dodatkowy przycisk na ekranie).';
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    pulloutWidget();
+                });
+                c.appendChild(btn);
+            });
+        } catch (e) {}
+    }
+
+    // Gra potrafi odpiac okno od warstwy (np. przy przelaczaniu okien na
+    // wierzch). Przed pokazaniem upewniamy sie, ze wciaz jest w dokumencie.
+    function ensureWindowAttached() {
+        if (!nativeWnd) return;
+        const el = nativeWnd.$ && nativeWnd.$[0];
+        if (!el || document.body.contains(el)) return;
+        try {
+            if (typeof nativeWnd.addToAlertLayer === 'function') nativeWnd.addToAlertLayer();
+            else GAME.Engine.interface.get$interfaceLayer().append(nativeWnd.$);
+        } catch (e) { LOG('nie udalo sie ponownie podpiac okna', e); }
+    }
+
+    function isOpen() {
+        if (nativeWnd) { try { return !!nativeWnd.isShow(); } catch (e) { return false; } }
+        return !!(winFrame && winFrame.style.display !== 'none');
+    }
+
+    function toggleWindow(force) {
+        const show = force === undefined ? !isOpen() : force;
+        if (nativeWnd) {
+            ensureWindowAttached();
+            try {
+                if (show) { nativeWnd.show(); applySavedPos(nativeWnd.$[0]); }
+                else nativeWnd.hide();
+            } catch (e) {}
+        } else if (winFrame) {
+            winFrame.style.display = show ? 'block' : 'none';
+        }
+        S.ui.open = show;
+        saveUi(S.ui);
+        if (show) renderAll();
+    }
+
+    function refreshIfOpen() {
+        if (isOpen() && S.ui.view !== 'ranking' && S.ui.range === 'day' && S.ui.selDay === todayKey()) renderStats();
+    }
+
+    /* ---------- rysowanie ---------- */
+    function renderCharSelect() {
+        const sel = win.querySelector('.mstat-char');
+        const idx = Object.assign({}, crossChars, loadIndex());
+        cloud.chars.forEach((c) => {
+            idx[charKey(c.world, c.char_id)] = { world: c.world, id: c.char_id, nick: c.nick };
+        });
+        idx[myKey()] = { world: S.world, id: S.charId, nick: S.nick };
+        const keys = Object.keys(idx).sort((a, b) => {
+            const ca = idx[a], cb = idx[b];
+            return (ca.world || '').localeCompare(cb.world || '') ||
+                (ca.nick || '').localeCompare(cb.nick || '');
+        });
+        const cur = S.ui.viewChar || myKey();
+        sel.innerHTML = keys.map((k) => {
+            const c = idx[k];
+            const label = (c.nick || 'postać ' + c.id) + ' — ' + c.world + (k === myKey() ? ' (tu jesteś)' : '');
+            return '<option value="' + esc(k) + '"' + (k === cur ? ' selected' : '') + '>' + esc(label) + '</option>';
+        }).join('');
+    }
+
+    function renderCalendar() {
+        const db = activeDb();
+        const y = S.ui.year, m = S.ui.month;
+        win.querySelector('.mstat-month').textContent = MONTHS[m] + ' ' + y;
+
+        const first = new Date(y, m, 1);
+        const offset = (first.getDay() + 6) % 7; // poniedzialek pierwszy
+        const days = new Date(y, m + 1, 0).getDate();
+        const tk = todayKey();
+
+        let html = WEEKDAYS.map((w) => '<div class="mstat-wd">' + w + '</div>').join('');
+        for (let i = 0; i < offset; i++) html += '<div class="mstat-day mstat-empty"></div>';
+        for (let d = 1; d <= days; d++) {
+            const key = y + '-' + pad2(m + 1) + '-' + pad2(d);
+            const rec = db.days[key];
+            const cls = ['mstat-day'];
+            if (rec) cls.push('mstat-has');
+            if (key === tk) cls.push('mstat-today');
+            if (key === S.ui.selDay) cls.push('mstat-sel');
+            const tip = rec
+                ? formatDuration(rec.ms) + ', ' + num(rec.kTot) + ' potworów'
+                : 'brak danych';
+            html += '<div class="' + cls.join(' ') + '" data-day="' + key + '" title="' + esc(key + ' — ' + tip) + '">' + d + '</div>';
+        }
+        win.querySelector('.mstat-cal').innerHTML = html;
+
+        // podsumowanie miesiaca pod kalendarzem
+        const prefix = y + '-' + pad2(m + 1) + '-';
+        const sum = emptyDay();
+        let activeDays = 0;
+        Object.keys(db.days).forEach((k) => {
+            if (k.indexOf(prefix) !== 0) return;
+            activeDays++;
+            addDayInto(sum, db.days[k]);
+        });
+        win.querySelector('.mstat-monthsum').innerHTML =
+            '<b>Podsumowanie miesiąca</b>' +
+            '<div><span>Dni z grą</span><span>' + num(activeDays) + '</span></div>' +
+            '<div><span>Czas gry</span><span>' + formatDuration(sum.ms) + '</span></div>' +
+            '<div><span>Potwory</span><span>' + num(sum.kTot) + '</span></div>' +
+            '<div><span>Przedmioty</span><span>' + num(sum.iTot) + '</span></div>' +
+            '<div><span>PvP (wyg./przeg.)</span><span>' + num(sum.pvpW) + ' / ' + num(sum.pvpL) + '</span></div>' +
+            '<div><span>Śmierci</span><span>' + num(sum.deaths) + '</span></div>' +
+            '<div><span>Bilans złota</span><span>' + ((sum.gIn - sum.gOut) > 0 ? '+' : (sum.gIn - sum.gOut) < 0 ? '−' : '') + num(Math.abs(sum.gIn - sum.gOut)) + '</span></div>';
+    }
+
+    function row(label, value, cls) {
+        return '<div class="mstat-row"><span class="k">' + label + '</span>' +
+            '<span class="v' + (cls ? ' ' + cls : '') + '">' + value + '</span></div>';
+    }
+
+    function sub(color, label, value, isZero) {
+        return '<div class="mstat-sub' + (isZero ? ' zero' : '') + '">' +
+            '<span class="k"><i class="mstat-dot" style="background:' + color + '"></i>' + label + '</span>' +
+            '<span class="v">' + value + '</span></div>';
+    }
+
+    function renderStats() {
+        const a = aggregate();
+
+        let when;
+        if (S.ui.range === 'day') {
+            const d = S.ui.selDay;
+            when = d === todayKey() ? 'Dziś — ' + d : d;
+        } else if (S.ui.range === 'month') {
+            when = MONTHS[S.ui.month] + ' ' + S.ui.year;
+        } else {
+            const keys = Object.keys(activeDb().days).sort();
+            when = keys.length ? 'Cała historia (' + keys[0] + ' … ' + keys[keys.length - 1] + ')' : 'Brak danych';
+        }
+        win.querySelector('.mstat-when').textContent = isForeignLoading() ? 'Wczytywanie danych postaci…' : when;
+
+        const netto = a.gIn - a.gOut;
+        const signed = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + num(Math.abs(v));
+        let html = '';
+
+        html += '<div class="mstat-sec">' +
+            row('Czas gry', formatDuration(a.ms)) +
+            row('Przebyte kratki', num(a.steps)) +
+            row('Śmierci postaci', num(a.deaths), a.deaths ? 'minus' : '') +
+            '</div>';
+
+        html += '<div class="mstat-sec"><h4>Złoto</h4>' +
+            row('Zarobione', signed(a.gIn), a.gIn ? 'plus' : '') +
+            row('Wydane', signed(-a.gOut), a.gOut ? 'minus' : '') +
+            row('Bilans', signed(netto), netto > 0 ? 'plus' : netto < 0 ? 'minus' : '') +
+            '</div>';
+
+        html += '<div class="mstat-sec"><h4>Zabite potwory</h4>' + row('Razem', num(a.kTot));
+        RANKS.forEach((r) => {
+            const v = a.k[r.id] || 0;
+            html += sub(r.color, r.label, num(v), v === 0);
+        });
+        html += '</div>';
+
+        const pvpTotal = a.pvpW + a.pvpL + a.pvpD;
+        html += '<div class="mstat-sec"><h4>Walki z graczami</h4>' +
+            row('Rozegrane', num(pvpTotal)) +
+            sub('#7ec97e', 'Wygrane', num(a.pvpW), a.pvpW === 0) +
+            sub('#e08080', 'Przegrane', num(a.pvpL), a.pvpL === 0) +
+            sub('#a29a88', 'Nierozstrzygnięte', num(a.pvpD), a.pvpD === 0) +
+            '</div>';
+
+        html += '<div class="mstat-sec"><h4>Przedmioty z potworów</h4>' + row('Razem', num(a.iTot));
+        RARITIES.forEach((r) => {
+            const v = a.i[r.id] || 0;
+            html += sub(r.color, r.label, num(v), v === 0);
+        });
+        const known = RARITIES.map((r) => r.id);
+        Object.keys(a.i).forEach((k) => {
+            if (known.indexOf(k) === -1) html += sub('#9a9a9a', esc(k), num(a.i[k]), false);
+        });
+        html += '</div>';
+
+        win.querySelector('.mstat-content').innerHTML = html;
+
+        win.querySelectorAll('[data-range]').forEach((b) => {
+            b.classList.toggle('on', b.dataset.range === S.ui.range);
+        });
+    }
+
+    function renderCloudStatus() {
+        if (!win) return;
+        const box = win.querySelector('.mstat-cloud');
+        box.style.display = S.ui.showCloudPanel ? 'block' : 'none';
+        const statusEl = win.querySelector('.mstat-cloud-status');
+        const formEl = win.querySelector('.mstat-cloud-form');
+        const loggedEl = win.querySelector('.mstat-cloud-logged');
+
+        if (!cloudReady()) {
+            statusEl.textContent = 'Chmura nie skonfigurowana (uzupełnij CLOUD.url / CLOUD.anonKey w skrypcie — patrz supabase_schema.sql).';
+            formEl.style.display = 'none';
+            loggedEl.style.display = 'none';
+            return;
+        }
+        if (cloud.session) {
+            formEl.style.display = 'none';
+            loggedEl.style.display = 'flex';
+            win.querySelector('.mstat-cloud-email2').textContent = cloud.session.email || '(zalogowano)';
+            let extra = 'Konto połączone — dane synchronizują się między komputerami.';
+            if (cloud.status === 'syncing') extra = 'Synchronizacja…';
+            else if (cloud.status === 'error') extra = 'Błąd synchronizacji: ' + cloud.error;
+            statusEl.textContent = extra;
+        } else {
+            formEl.style.display = 'block';
+            loggedEl.style.display = 'none';
+            statusEl.textContent = 'Zaloguj się, aby mieć te same dane na każdym komputerze i wpis w rankingu.';
+        }
+    }
+
+    function renderRanking() {
+        const period = S.ui.rankPeriod || 'day';
+        win.querySelectorAll('[data-rankperiod]').forEach((b) => b.classList.toggle('on', b.dataset.rankperiod === period));
+        const catId = S.ui.rankCategory || 'kTot';
+        const catSel = win.querySelector('.mstat-rank-cat');
+        if (catSel.value !== catId) catSel.value = catId;
+        const whenEl = win.querySelector('.mstat-rank-when');
+        const tableEl = win.querySelector('.mstat-rank-table');
+
+        if (!cloudReady()) {
+            whenEl.textContent = '';
+            tableEl.innerHTML = '<div class="mstat-when">Ranking wymaga skonfigurowanej chmury (uzupełnij CLOUD.url / CLOUD.anonKey w skrypcie).</div>';
+            return;
+        }
+        const rows = cloud.lbRows[period];
+        if (rows === null || rows === undefined) {
+            if (!cloud.lbLoading[period]) pullLeaderboard(period);
+            whenEl.textContent = '';
+            tableEl.innerHTML = '<div class="mstat-when">Wczytywanie rankingu…</div>';
+            return;
+        }
+        const cat = LB_CATEGORIES.find((c) => c.id === catId) || LB_CATEGORIES[0];
+        const sorted = rows.slice().sort((a, b) => cat.get(b.totals || {}) - cat.get(a.totals || {}));
+        const now = new Date();
+        whenEl.textContent = (period === 'month'
+            ? 'Ranking miesięczny — ' + MONTHS[now.getMonth()] + ' ' + now.getFullYear()
+            : 'Ranking dzienny — ' + todayKey()) +
+            ', wg: ' + cat.label + '. Wpis każdego gracza odświeża się co godzinę.';
+        if (!sorted.length) {
+            tableEl.innerHTML = '<div class="mstat-when">Ranking jest jeszcze pusty — pojawi się tu, gdy zalogowani gracze zsynchronizują dane.</div>';
+            return;
+        }
+        let html = '<table class="mstat-lb"><thead><tr><th>#</th><th>Postać</th><th>Świat</th><th>' + esc(cat.label) + '</th></tr></thead><tbody>';
+        sorted.forEach((r, i) => {
+            const v = cat.get(r.totals || {});
+            const mine = cloud.session && r.world === S.world && r.char_id === S.charId ? ' class="mstat-lb-me"' : '';
+            html += '<tr' + mine + '><td>' + (i + 1) + '</td><td>' + esc(r.nick || '?') + '</td><td>' + esc(r.world || '') + '</td>' +
+                '<td>' + (cat.fmt ? cat.fmt(v) : num(v)) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        tableEl.innerHTML = html;
+    }
+
+    function renderAll() {
+        renderCloudStatus();
+        const view = S.ui.view || 'stats';
+        win.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === view));
+        const isRanking = view === 'ranking';
+        win.querySelector('.mstat-body').style.display = isRanking ? 'none' : 'flex';
+        win.querySelector('.mstat-ranking').style.display = isRanking ? 'block' : 'none';
+        win.querySelector('.mstat-foot').style.display = isRanking ? 'none' : 'flex';
+        if (isRanking) renderRanking();
+        else { renderCharSelect(); renderCalendar(); renderStats(); }
+    }
+
+    /* ==================================================================
+     *  START
+     * ================================================================== */
+    function worldName() {
+        try {
+            const w = GAME.Engine.worldConfig;
+            if (w && typeof w.getWorldName === 'function') {
+                const n = w.getWorldName();
+                if (n) return n;
+            }
+        } catch (e) {}
+        return GAME.location.hostname.split('.')[0];
+    }
+
+    function ready() {
+        return !!(GAME.Engine && GAME.API && GAME.Engine.apiData &&
+            GAME.Engine.hero && GAME.Engine.hero.d && GAME.Engine.hero.d.id &&
+            GAME.Engine.items && document.body);
+    }
+
+    function start() {
+        S.world = worldName();
+        S.charId = String(GAME.Engine.hero.d.id);
+        S.nick = GAME.Engine.hero.d.nick || '';
+        S.db = loadDb(S.world, S.charId);
+        registerChar(S.world, S.charId, S.nick);
+
+        const now = new Date();
+        S.ui = Object.assign({
+            year: now.getFullYear(),
+            month: now.getMonth(),
+            selDay: todayKey(),
+            range: 'day',
+            view: 'stats',
+            showCloudPanel: false,
+            extraFallback: false,
+            rankPeriod: 'day',
+            rankCategory: 'kTot',
+            viewChar: S.world + '|' + S.charId,
+            open: false
+        }, loadUi());
+        // Po restarcie zawsze pokazujemy aktualna postac i dzisiejszy dzien.
+        S.ui.viewChar = S.world + '|' + S.charId;
+        S.ui.selDay = todayKey();
+        S.ui.year = now.getFullYear();
+        S.ui.month = now.getMonth();
+
+        S.lastTick = Date.now();
+        S.lastMap = currentMapId();
+        try {
+            S.lastX = GAME.Engine.hero.d.x;
+            S.lastY = GAME.Engine.hero.d.y;
+            S.lastGold = GAME.Engine.hero.d.gold;
+        } catch (e) {}
+
+        today();
+        injectCss();
+        buildWindow();
+        buildWidget();
+        attachHooks();
+
+        if (S.ui.open) toggleWindow(true);
+
+        if (CFG.hotkey) {
+            document.addEventListener('keydown', (e) => {
+                const t = e.target;
+                if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+                const h = CFG.hotkey;
+                if (e.key.toLowerCase() !== h.key.toLowerCase()) return;
+                if (!!h.alt !== e.altKey || !!h.ctrl !== e.ctrlKey || !!h.shift !== e.shiftKey) return;
+                e.preventDefault();
+                toggleWindow();
+            });
+        }
+
+        GAME.MSTAT = {
+            data: () => S.db,
+            state: S,
+            save: () => flush(true),
+            open: () => toggleWindow(true),
+            cloud: cloud,
+            signIn: cloudSignIn,
+            signUp: cloudSignUp,
+            signOut: cloudSignOut,
+            refreshCloudChars: () => pullCloudCharacters(),
+            refreshRanking: (period) => pullLeaderboard(period)
+        };
+
+        LOG('start — ' + S.nick + ' (' + S.world + '), dni w historii: ' + Object.keys(S.db.days).length);
+    }
+
+    // Podpiecia zakladamy od razu przy wczytaniu skryptu: podmiana
+    // konstruktora WebSocketa musi wyprzedzic polaczenie gry, a kanal
+    // Engine.communication lapiemy, gdy tylko silnik sie pojawi.
+    patchWebSocket();
+    installPacketHooks();
+    const hookBoot = setInterval(installPacketHooks, 150);
+    setTimeout(function () { clearInterval(hookBoot); }, 120000);
+
+    let tries = 0;
+    const boot = setInterval(function () {
+        if (ready()) {
+            clearInterval(boot);
+            try { start(); } catch (e) { LOG('blad startu', e); }
+        } else if (++tries > 300) {
+            clearInterval(boot);
+            LOG('nie doczekano sie silnika gry');
+        }
+    }, 400);
+})();
