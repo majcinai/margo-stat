@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Margonem - Statystyki dzienne
 // @namespace    margonem-daily-stats
-// @version      2.4
-// @description  Dzienne statystyki postaci: czas gry, zabite potwory wg rang, walki PvP, smierci, loot wg rang, bilans zlota i przebyte kratki. Dane per postac i per swiat, z kalendarzem do przegladania historii. Synchronizacja w chmurze (Supabase) miedzy komputerami + publiczny ranking dzienny i miesieczny (co godzine, z przeklikiwaniem kategorii). Recznie "wyciagany" widget z okna Konfiguracji gry, gdy na belce nie ma miejsca.
+// @version      2.6
+// @description  Dzienne statystyki postaci: czas gry, zabite potwory wg rang, walki PvP, smierci, loot wg rang, bilans zlota i przebyte kratki. Dane per postac i per swiat, z kalendarzem do przegladania historii. Synchronizacja w chmurze (Supabase) miedzy komputerami, na biezaco (kazdy komputer dopisuje wlasny wpis dnia co ok. 10 s, wyniki z tego samego dnia sie sumuja, nie nadpisuja) + publiczny ranking dzienny i miesieczny (co 15 minut, z przeklikiwaniem kategorii). Recznie "wyciagany" widget z okna Konfiguracji gry, gdy na belce nie ma miejsca.
 // @match        https://*.margonem.pl/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
@@ -11,8 +11,8 @@
 // @connect      *.supabase.co
 // @connect      supabase.co
 // @run-at       document-start
-// @updateURL    https://raw.githubusercontent.com/majcinai/margo-stat/main/statystyki-dzienne.user.js
-// @downloadURL  https://raw.githubusercontent.com/majcinai/margo-stat/main/statystyki-dzienne.user.js
+// @updateURL    https://raw.githubusercontent.com/majcinai/margo-stat/main/statystyki-dzienne.user
+// @downloadURL  https://raw.githubusercontent.com/majcinai/margo-stat/main/statystyki-dzienne.user
 // ==/UserScript==
 
 (function () {
@@ -62,11 +62,11 @@
         url: 'https://vkojqtgycrkeiybwwioj.supabase.co/',
         anonKey: 'sb_publishable_3TsKKSyJ_h1fJz8gZAUfiQ_1uxnuY_g',
         // co ile wysylac ostatnie dni biezacej postaci (ms)
-        pushIntervalMs: 30000,
+        pushIntervalMs: 10000,
         // ile ostatnich dni wysylac przy kazdej synchronizacji
         pushRecentDays: 3,
         // co ile odswiezac wlasny wpis w publicznym rankingu (dzienny i miesieczny)
-        leaderboardIntervalMs: 60 * 60 * 1000
+        leaderboardIntervalMs: 15 * 60 * 1000
     };
 
     const RANKS = [
@@ -418,6 +418,22 @@
         try { localStorage.removeItem('mstat_gm_' + key); } catch (e) {}
     }
 
+    // Stabilne, losowe ID tej konkretnej instalacji (przegladarka/komputer),
+    // wygenerowane raz i trzymane w pamieci Tampermonkey. Dzieki niemu kazdy
+    // komputer zapisuje w chmurze SWOJ WLASNY wiersz danego dnia (patrz
+    // player_days w supabase_schema.sql - device_id jest czescia klucza
+    // glownego), zamiast nadpisywac wpis innego komputera tego samego dnia.
+    const CLOUD_DEVICE_KEY = 'mstat_v1_device';
+    function getDeviceId() {
+        let id = gmGet(CLOUD_DEVICE_KEY, null);
+        if (!id || typeof id !== 'string') {
+            id = 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+            gmSet(CLOUD_DEVICE_KEY, id);
+        }
+        return id;
+    }
+    const DEVICE_ID = getDeviceId();
+
     // Cienki wrapper na GM_xmlhttpRequest - w odroznieniu od zwyklego
     // fetch() omija CORS/CSP strony gry, wiec dziala bez wzgledu na to,
     // co margonem.pl pozwala laczyc zwyklemu skryptowi strony.
@@ -587,7 +603,7 @@
         const rows = recent.map(function (day) {
             return {
                 user_id: cloud.session.user_id, world: S.world, char_id: S.charId,
-                day: day, nick: S.nick, data: normalizeDay(S.db.days[day]),
+                day: day, device_id: DEVICE_ID, nick: S.nick, data: normalizeDay(S.db.days[day]),
                 updated_at: new Date().toISOString()
             };
         });
@@ -607,34 +623,92 @@
         return d.getFullYear() + '-' + pad2(d.getMonth() + 1);
     }
 
+    // Pierwszy dzien biezacego i nastepnego miesiaca (do zakresowego
+    // zapytania "day >= ... AND day < ..." o wpisy z tego miesiaca).
+    function monthRange() {
+        const d = new Date();
+        const first = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-01';
+        const nd = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+        const nextFirst = nd.getFullYear() + '-' + pad2(nd.getMonth() + 1) + '-01';
+        return { first: first, nextFirst: nextFirst };
+    }
+
+    // Suma kilku obiektow "dnia" (bez mutowania zadnego z nich - w
+    // odroznieniu od addDayInto(out, ...), tu "out" jest zawsze nowym,
+    // pustym obiektem). Bezpieczne do uzycia na danych z S.db.
+    function sumDayLike(list) {
+        const out = emptyDay();
+        (list || []).forEach(function (d) { addDayInto(out, d); });
+        return out;
+    }
+
+    // Wlasne dane WYLACZNIE z tego komputera (jak dotychczas) - uzywane,
+    // gdy chmura jest niedostepna/nie skonfigurowana.
     function ownDayTotals() {
-        return normalizeDay(S.db.days[todayKey()] || emptyDay());
+        return sumDayLike([S.db.days[todayKey()]]);
     }
 
     function ownMonthTotals() {
         const prefix = monthKey() + '-';
-        const out = emptyDay();
-        Object.keys(S.db.days).forEach(function (k) { if (k.indexOf(prefix) === 0) addDayInto(out, S.db.days[k]); });
-        return out;
+        const list = [];
+        Object.keys(S.db.days).forEach(function (k) { if (k.indexOf(prefix) === 0) list.push(S.db.days[k]); });
+        return sumDayLike(list);
+    }
+
+    // Wiersze player_days ZAPISANE Z INNYCH KOMPUTEROW (device_id != ten)
+    // dla tej postaci - do zsumowania z wlasnymi, lokalnymi danymi. Kazdy
+    // komputer pisze swoj wlasny wiersz na dzien (patrz DEVICE_ID /
+    // pushCloudDays), wiec pobranie "reszty urzadzen" i dopisanie do
+    // lokalnego wyniku daje prawdziwa sume - bez ryzyka policzenia wlasnego
+    // wpisu dwa razy, niezaleznie od tego, czy juz zdazyl sie wyslac.
+    function otherDeviceDayRows(day) {
+        if (!cloudReady() || !cloud.session) return Promise.resolve([]);
+        return cloudRest('GET', '/player_days?select=data&world=eq.' + encodeURIComponent(S.world) +
+            '&char_id=eq.' + encodeURIComponent(S.charId) + '&day=eq.' + encodeURIComponent(day) +
+            '&device_id=neq.' + encodeURIComponent(DEVICE_ID))
+            .then(function (rows) { return (rows || []).map(function (r) { return normalizeDay(r.data); }); })
+            .catch(function () { return []; });
+    }
+
+    function otherDeviceMonthRows() {
+        if (!cloudReady() || !cloud.session) return Promise.resolve([]);
+        const range = monthRange();
+        return cloudRest('GET', '/player_days?select=data&world=eq.' + encodeURIComponent(S.world) +
+            '&char_id=eq.' + encodeURIComponent(S.charId) + '&day=gte.' + encodeURIComponent(range.first) +
+            '&day=lt.' + encodeURIComponent(range.nextFirst) + '&device_id=neq.' + encodeURIComponent(DEVICE_ID))
+            .then(function (rows) { return (rows || []).map(function (r) { return normalizeDay(r.data); }); })
+            .catch(function () { return []; });
     }
 
     // Ranking dzienny i miesieczny to dwa osobne wiersze per postac (patrz
     // kolumny period/period_key w supabase_schema.sql) - kazdy z nich
-    // aktualizujemy co godzine, wiec ranking odswieza sie zdecydowanie
-    // czesciej niz raz na dobe.
+    // aktualizujemy co CLOUD.leaderboardIntervalMs (domyslnie 15 minut).
+    // Zeby ranking pokazywal PRAWDZIWA sume z
+    // wszystkich komputerow (a nie tylko tego, ktory akurat wysyla), przed
+    // wyslaniem dociagamy wpisy innych urzadzen tej samej postaci za dany
+    // dzien/miesiac i sumujemy je z lokalnymi danymi tego komputera.
     function pushCloudLeaderboard(force) {
-        if (!cloudReady() || !cloud.session || !S.db) return;
+        if (!cloudReady() || !cloud.session || !S.db) return Promise.resolve();
         const now = Date.now();
-        if (!force && now - cloud.lastLbPush < CLOUD.leaderboardIntervalMs) return;
+        if (!force && now - cloud.lastLbPush < CLOUD.leaderboardIntervalMs) return Promise.resolve();
         cloud.lastLbPush = now;
         gmSet(CLOUD_LAST_LB_KEY, now);
-        const iso = new Date().toISOString();
-        cloudRest('POST', '/leaderboard', [
-            { user_id: cloud.session.user_id, world: S.world, char_id: S.charId, nick: S.nick,
-              period: 'day', period_key: todayKey(), totals: ownDayTotals(), updated_at: iso },
-            { user_id: cloud.session.user_id, world: S.world, char_id: S.charId, nick: S.nick,
-              period: 'month', period_key: monthKey(), totals: ownMonthTotals(), updated_at: iso }
-        ], { Prefer: 'resolution=merge-duplicates,return=minimal' }).catch(function (e) {
+        const day = todayKey();
+        const monthPrefix = monthKey() + '-';
+        const ownMonthDays = Object.keys(S.db.days)
+            .filter(function (k) { return k.indexOf(monthPrefix) === 0; })
+            .map(function (k) { return S.db.days[k]; });
+        return Promise.all([otherDeviceDayRows(day), otherDeviceMonthRows()]).then(function (res) {
+            const dayTotals = sumDayLike([S.db.days[day]].concat(res[0]));
+            const monthTotals = sumDayLike(ownMonthDays.concat(res[1]));
+            const iso = new Date().toISOString();
+            return cloudRest('POST', '/leaderboard', [
+                { user_id: cloud.session.user_id, world: S.world, char_id: S.charId, nick: S.nick,
+                  period: 'day', period_key: day, totals: dayTotals, updated_at: iso },
+                { user_id: cloud.session.user_id, world: S.world, char_id: S.charId, nick: S.nick,
+                  period: 'month', period_key: monthKey(), totals: monthTotals, updated_at: iso }
+            ], { Prefer: 'resolution=merge-duplicates,return=minimal' });
+        }).catch(function (e) {
             LOG('chmura: nie udalo sie zaktualizowac rankingu', e.message || e);
         });
     }
@@ -660,10 +734,16 @@
             '&char_id=eq.' + encodeURIComponent(charId) + '&order=day.asc')
             .then(function (rows) {
                 const db = emptyDb('', world);
+                // Kazdy komputer ma wlasny wiersz na dzien (device_id), wiec
+                // dla tego samego dnia moze przyjsc kilka wierszy - sumujemy
+                // je (nie nadpisujemy), bo reprezentuja rozlaczne okresy gry.
+                const byDay = {};
                 (rows || []).forEach(function (r) {
-                    db.days[r.day] = normalizeDay(r.data);
+                    if (!byDay[r.day]) byDay[r.day] = [];
+                    byDay[r.day].push(normalizeDay(r.data));
                     if (r.nick) db.nick = r.nick;
                 });
+                Object.keys(byDay).forEach(function (day) { db.days[day] = sumDayLike(byDay[day]); });
                 foreignCache.set(key, db);
                 if (S.ui.viewChar === key && snapAfterSwitch) { snapToAvailableDay(); snapAfterSwitch = false; }
                 if (isOpen() && S.ui.viewChar === key) renderAll();
@@ -699,10 +779,15 @@
         renderCloudStatus();
         pushCloudCharacter();
         pushCloudDays(true);
-        pushCloudLeaderboard(true);
         pullCloudCharacters();
-        pullLeaderboard('day');
-        pullLeaderboard('month');
+        // Ranking dociagamy PO tym, jak wlasny wpis (zsumowany z innymi
+        // urzadzeniami) zdazyl sie wyslac - inaczej pierwszy odczyt po
+        // zalogowaniu moglby wyprzedzic wysylke i pokazac ranking bez
+        // wlasnego, najnowszego wpisu.
+        pushCloudLeaderboard(true).then(function () {
+            pullLeaderboard('day');
+            pullLeaderboard('month');
+        });
     }
 
     /* ==================================================================
@@ -2152,7 +2237,7 @@
         whenEl.textContent = (period === 'month'
             ? 'Ranking miesięczny — ' + MONTHS[now.getMonth()] + ' ' + now.getFullYear()
             : 'Ranking dzienny — ' + todayKey()) +
-            ', wg: ' + cat.label + '. Wpis każdego gracza odświeża się co godzinę.';
+            ', wg: ' + cat.label + '. Wpis każdego gracza odświeża się co najwyżej co 15 minut.';
         if (!sorted.length) {
             tableEl.innerHTML = '<div class="mstat-when">Ranking jest jeszcze pusty — pojawi się tu, gdy zalogowani gracze zsynchronizują dane.</div>';
             return;
