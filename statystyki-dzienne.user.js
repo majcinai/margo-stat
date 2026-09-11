@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Margonem - Statystyki dzienne
 // @namespace    margonem-daily-stats
-// @version      2.8
+// @version      2.9
 // @description  Dzienne statystyki postaci: czas gry, zabite potwory wg rang, walki PvP, smierci, loot wg rang, bilans zlota, przebyte kratki i punkty ulepszen (przepalanie). Dane per postac, per swiat (sumy wszystkich postaci z serwera) i per konto, z kalendarzem do przegladania historii. Synchronizacja w chmurze (Supabase) miedzy komputerami, na biezaco (kazdy komputer dopisuje wlasny wpis dnia co ok. 10 s, wyniki z tego samego dnia sie sumuja, nie nadpisuja) + publiczny ranking dzienny i miesieczny (co 15 minut, z przeklikiwaniem kategorii). Recznie "wyciagany" widget z okna Konfiguracji gry, gdy na belce nie ma miejsca.
 // @match        https://*.margonem.pl/*
 // @grant        GM_xmlhttpRequest
@@ -1503,6 +1503,41 @@
         max-height: 75vh; overflow-y: auto;
         color: #cfc8b8; font: 12px/1.45 Verdana, Arial, sans-serif;
         user-select: none;
+    }
+
+    /* Suwak jak w samej grze (.scroll-wrapper .handle): waski, bez tla toru,
+       mocno zaokraglony i pollprzezroczysty. Tor ma 7 px, a przezroczysta
+       ramka z background-clip zwęża sam uchwyt do 5 px - dokladnie tak, jak
+       robi to gra. */
+    .mstat-root::-webkit-scrollbar,
+    .mstat-root *::-webkit-scrollbar { width: 7px; height: 7px; }
+    .mstat-root::-webkit-scrollbar-track,
+    .mstat-root *::-webkit-scrollbar-track { background: transparent; }
+    .mstat-root::-webkit-scrollbar-thumb,
+    .mstat-root *::-webkit-scrollbar-thumb {
+        background: rgba(209, 210, 211, 0.52);
+        border: 1px solid transparent;
+        background-clip: padding-box;
+        border-radius: 14px;
+    }
+    .mstat-root::-webkit-scrollbar-thumb:hover,
+    .mstat-root *::-webkit-scrollbar-thumb:hover {
+        background: rgba(209, 210, 211, 0.78);
+        border: 1px solid transparent;
+        background-clip: padding-box;
+    }
+    .mstat-root::-webkit-scrollbar-corner,
+    .mstat-root *::-webkit-scrollbar-corner { background: transparent; }
+
+    /* Firefox nie zna ::-webkit-scrollbar i potrzebuje standardowych
+       wlasciwosci. Nie dajemy ich globalnie, bo Chrome przy ustawionym
+       scrollbar-width przestaje sluchac regul powyzej (i uchwyt bylby
+       szerszy niz w grze) - stad warunek "przegladarka bez ::-webkit-scrollbar". */
+    @supports (scrollbar-width: thin) and (not selector(::-webkit-scrollbar)) {
+        .mstat-root, .mstat-root * {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(209, 210, 211, 0.52) transparent;
+        }
     }
     .mstat-topbar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 6px 8px 2px; }
     .mstat-topbar select {
