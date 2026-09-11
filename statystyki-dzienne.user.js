@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Margonem - Statystyki dzienne
 // @namespace    margonem-daily-stats
-// @version      2.6
+// @version      2.7
 // @description  Dzienne statystyki postaci: czas gry, zabite potwory wg rang, walki PvP, smierci, loot wg rang, bilans zlota i przebyte kratki. Dane per postac i per swiat, z kalendarzem do przegladania historii. Synchronizacja w chmurze (Supabase) miedzy komputerami, na biezaco (kazdy komputer dopisuje wlasny wpis dnia co ok. 10 s, wyniki z tego samego dnia sie sumuja, nie nadpisuja) + publiczny ranking dzienny i miesieczny (co 15 minut, z przeklikiwaniem kategorii). Recznie "wyciagany" widget z okna Konfiguracji gry, gdy na belce nie ma miejsca.
 // @match        https://*.margonem.pl/*
 // @grant        GM_xmlhttpRequest
@@ -391,6 +391,14 @@
      *  wysyla wylacznie swoj wlasny wiersz, i to najwyzej raz na dobe.
      * ================================================================== */
     const CLOUD_SESSION_KEY = 'mstat_v1_session';
+    // Mapa "swiat|id_postaci" -> kiedy ostatnio wyslano jej wpis do rankingu.
+    // WAZNE: GM_setValue/GM_getValue to pamiec calego SKRYPTU (wspolna dla
+    // wszystkich swiatow/postaci na tym komputerze, w odroznieniu od
+    // localStorage, ktore jest osobne per domena/swiat) - dlatego throttling
+    // musi byc trzymany per postac (w tej mapie), a NIE jako jedna wspolna
+    // liczba: inaczej wyslanie rankingu dla jednej postaci "zajmuje" throttle
+    // na 15 minut dla WSZYSTKICH innych postaci przelaczanych w tym czasie
+    // na tym komputerze, i ich wpis w dziennym rankingu nigdy nie powstaje.
     const CLOUD_LAST_LB_KEY = 'mstat_v1_lb_push';
 
     // Magazyn Tampermonkey - tu trzyma sie token logowania (localStorage
@@ -461,11 +469,34 @@
         status: 'idle',         // idle | syncing | ok | error
         error: '',
         lastPush: 0,
-        lastLbPush: gmGet(CLOUD_LAST_LB_KEY, 0),
         chars: [],               // wlasne postacie wg chmury (wszystkie komputery/swiaty)
         lbRows: { day: null, month: null },       // ostatnio pobrany publiczny ranking, per okres
         lbLoading: { day: false, month: false }
     };
+
+    // Throttling wysylki rankingu - PER POSTAC (patrz komentarz przy
+    // CLOUD_LAST_LB_KEY), zeby przelaczanie sie miedzy postaciami na tym
+    // samym komputerze nie blokowalo im nawzajem aktualizacji rankingu.
+    function lbPushMap() {
+        const m = gmGet(CLOUD_LAST_LB_KEY, {});
+        return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
+    }
+
+    function getLastLbPush(key) {
+        const v = lbPushMap()[key];
+        return Number.isFinite(v) ? v : 0;
+    }
+
+    function setLastLbPush(key, ts) {
+        const m = lbPushMap();
+        m[key] = ts;
+        // porzadki - to tylko throttle, nie trzeba trzymac wpisow starszych
+        // niz kilka dni (zeby mapa nie rosla bez konca dla kont z wieloma
+        // postaciami).
+        const cutoff = ts - 7 * 24 * 60 * 60 * 1000;
+        Object.keys(m).forEach(function (k) { if (!Number.isFinite(m[k]) || m[k] < cutoff) delete m[k]; });
+        gmSet(CLOUD_LAST_LB_KEY, m);
+    }
 
     function loadCloudSession() {
         const s = gmGet(CLOUD_SESSION_KEY, null);
@@ -689,10 +720,10 @@
     // dzien/miesiac i sumujemy je z lokalnymi danymi tego komputera.
     function pushCloudLeaderboard(force) {
         if (!cloudReady() || !cloud.session || !S.db) return Promise.resolve();
+        const lbKey = myKey();
         const now = Date.now();
-        if (!force && now - cloud.lastLbPush < CLOUD.leaderboardIntervalMs) return Promise.resolve();
-        cloud.lastLbPush = now;
-        gmSet(CLOUD_LAST_LB_KEY, now);
+        if (!force && now - getLastLbPush(lbKey) < CLOUD.leaderboardIntervalMs) return Promise.resolve();
+        setLastLbPush(lbKey, now);
         const day = todayKey();
         const monthPrefix = monthKey() + '-';
         const ownMonthDays = Object.keys(S.db.days)
