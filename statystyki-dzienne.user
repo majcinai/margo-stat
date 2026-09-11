@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Margonem - Statystyki dzienne
 // @namespace    margonem-daily-stats
-// @version      2.3
+// @version      2.3a
 // @description  Dzienne statystyki postaci: czas gry, zabite potwory wg rang, walki PvP, smierci, loot wg rang, bilans zlota i przebyte kratki. Dane per postac i per swiat, z kalendarzem do przegladania historii. Synchronizacja w chmurze (Supabase) miedzy komputerami + publiczny ranking dzienny i miesieczny (co godzine, z przeklikiwaniem kategorii). Recznie "wyciagany" widget z okna Konfiguracji gry, gdy na belce nie ma miejsca.
 // @match        https://*.margonem.pl/*
 // @grant        GM_xmlhttpRequest
@@ -59,8 +59,8 @@
     // dokladnie jak dotychczas (tylko lokalnie + cross-storage gry).
     const CLOUD = {
         enabled: true,
-        url: 'https://TWOJ-PROJEKT.supabase.co',
-        anonKey: 'TWOJ-KLUCZ-ANON',
+        url: 'https://vkojqtgycrkeiybwwioj.supabase.co/',
+        anonKey: 'sb_publishable_3TsKKSyJ_h1fJz8gZAUfiQ_1uxnuY_g',
         // co ile wysylac ostatnie dni biezacej postaci (ms)
         pushIntervalMs: 30000,
         // ile ostatnich dni wysylac przy kazdej synchronizacji
