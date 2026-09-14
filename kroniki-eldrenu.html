@@ -45,6 +45,7 @@
   .hud-av{width:62px;height:62px;flex:none;border-radius:50%;overflow:hidden;
     background:radial-gradient(circle at 40% 30%,#cfe0f5,#7f97c4);border:3px solid var(--gold);box-shadow:0 3px 8px var(--sh);}
   .hud-av svg{width:100%;height:100%;transform:scale(1.35) translateY(6%);}
+  .hud-av img{width:100%;height:100%;object-fit:cover;object-position:center 14%;}
   .hud-st{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1;}
   .hud-name{font-size:15px;font-weight:800;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.2px;}
   .hbar{position:relative;height:13px;border-radius:7px;background:rgba(0,0,0,.45);overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,.6);}
@@ -127,12 +128,17 @@
   #tip .trow .btn{flex:1;text-align:center;}
 
   /* ---------- BATTLE ---------- */
-  #layer-battle{z-index:30;display:flex;flex-direction:column;}
+  #layer-battle{z-index:30;display:flex;flex-direction:column;background-size:cover;background-position:center bottom;}
+  /* malowane tło areny jest jasne — przyciemniamy góre i dół, żeby HUD i log zostały czytelne */
+  #layer-battle.has-art::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(180deg,rgba(12,8,4,.52) 0%,rgba(12,8,4,.10) 26%,rgba(12,8,4,.12) 58%,rgba(12,8,4,.62) 100%);}
+  #layer-battle.has-art > *{position:relative;}
   .bt-arena{flex:1;min-height:0;display:flex;align-items:center;justify-content:space-around;padding:96px 4vw 0;gap:8px;position:relative;}
   .bt-side{width:42%;max-width:230px;display:flex;flex-direction:column;align-items:center;gap:7px;}
   .bt-stage{width:100%;max-width:172px;aspect-ratio:1/1;position:relative;}
-  .bt-stage svg.creature{width:100%;height:100%;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35));}
-  .bt-stage.hit svg.creature{animation:hitf .28s;}
+  .bt-stage svg.creature,.bt-stage img.creature{width:100%;height:100%;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35));}
+  img.creature.art{object-fit:contain;object-position:center bottom;display:block;}
+  .bt-stage.hit svg.creature,.bt-stage.hit img.creature{animation:hitf .28s;}
   @keyframes hitf{0%{filter:brightness(1);}35%{filter:brightness(2.2) saturate(.2);transform:translateX(-4px);}100%{filter:brightness(1);}}
   .plate{background:linear-gradient(180deg,#fff6e2,#e6d3ac);color:#37281a;font-weight:800;font-size:12.5px;
     padding:3px 11px;border-radius:10px;box-shadow:0 3px 6px var(--sh);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -195,7 +201,8 @@
   .shoprow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed rgba(255,255,255,.12);}
   .shoprow:last-child{border-bottom:none;}
   .bpreview{width:96px;height:96px;flex:none;}
-  .bpreview svg{width:100%;height:100%;}
+  .bpreview svg,.bpreview img{width:100%;height:100%;}
+  .bpreview img{object-fit:contain;}
 
   /* ---------- STAGE PICKER / LOOT ---------- */
   .stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(126px,1fr));gap:9px;}
@@ -204,7 +211,8 @@
   .stage.boss{border-color:var(--gold);background:linear-gradient(180deg,rgba(255,206,84,.16),rgba(0,0,0,.3));}
   .stage.locked{opacity:.45;}
   .stage .art{width:78px;height:78px;}
-  .stage .art svg{width:100%;height:100%;}
+  .stage .art svg,.stage .art img{width:100%;height:100%;}
+  .stage .art img{object-fit:contain;}
   .stage .eta{font-size:10.5px;font-weight:800;color:var(--gold);letter-spacing:.5px;text-transform:uppercase;}
   .stage .nm{font-size:13px;font-weight:700;line-height:1.2;}
   .stage .lv{font-size:11.5px;color:var(--text-faint);}
@@ -213,6 +221,7 @@
   .loot-row b{color:var(--gold);}
   .loot-item{display:flex;gap:10px;align-items:center;background:rgba(0,0,0,.32);border-radius:13px;padding:9px 11px;margin-top:10px;text-align:left;border:2px solid var(--wood);}
   .loot-art{width:74px;height:74px;margin:0 auto;}
+  .loot-art img{width:100%;height:100%;object-fit:contain;}
   .stat-line{display:flex;justify-content:space-between;font-size:13.5px;padding:3px 0;border-bottom:1px dashed rgba(255,255,255,.08);}
   .stat-line:last-child{border-bottom:none;}
   .stat-line span:last-child{font-weight:700;color:var(--text);}
@@ -592,6 +601,51 @@ const CREATURES = {
       '<rect x="80.5" y="61" width="5" height="10" rx="2.5" fill="#7a5433" stroke="'+OUT+'" stroke-width="1.6"/>';
   },
 };
+/* =====================================================================
+   2b. WARSTWA GRAFIKI — pliki z katalogu art/ zamiast rysunku proceduralnego
+   Zasób, którego nie ma, po prostu nie istnieje: gra rysuje jak dotąd.
+===================================================================== */
+const ART_DIR = 'art/';
+const ART_OK = {};           /* 'mob:slime1' -> 'art/mob-slime1.png' */
+let artReady = false;
+function artFileFor(key){
+  if(key === 'hero') return ['hero.png','hero.webp'];
+  for(const z of ZONES){
+    if(z.boss === key) return ['boss-'+z.id+'.png','boss-'+z.id+'.webp'];
+    if(z.monsters.indexOf(key) >= 0) return ['mob-'+key+'.png','mob-'+key+'.webp'];
+  }
+  return null;
+}
+function probeArt(done){
+  const jobs = [];
+  const keys = ['hero'];
+  ZONES.forEach(function(z){ keys.push.apply(keys, z.monsters); keys.push(z.boss); });
+  keys.forEach(function(k){
+    const files = artFileFor(k);
+    if(files) jobs.push({slot:'mob:'+k, files:files});
+  });
+  ZONES.forEach(function(z){
+    jobs.push({slot:'arena:'+z.id, files:['arena-'+z.id+'.jpg','arena-'+z.id+'.png','arena-'+z.id+'.webp']});
+  });
+  let left = jobs.length;
+  if(!left){ done(); return; }
+  jobs.forEach(function(job){
+    let i = 0;
+    (function tryNext(){
+      if(i >= job.files.length){ if(!--left) done(); return; }
+      const url = ART_DIR + job.files[i++];
+      const img = new Image();
+      img.onload = function(){ ART_OK[job.slot] = url; if(!--left) done(); };
+      img.onerror = tryNext;
+      img.src = url;
+    })();
+  });
+}
+function creatureArt(key, shape, p, cls){
+  const src = key && ART_OK['mob:'+key];
+  if(src) return '<img class="creature art '+(cls||'')+'" src="'+src+'" alt="" draggable="false">';
+  return creatureSVG(shape, p, cls);
+}
 function creatureSVG(kind, p, cls){
   const u = 'c'+(uidSeq++);
   const fn = CREATURES[kind] || CREATURES.slime;
@@ -1562,7 +1616,7 @@ function tickHero(){
 function heroMonster(){
   const h = state.heroSpawn;
   const lvl = h.level || Math.max(4, Math.round(state.level*1.15)+3);
-  return {name:'Wędrowny Heros', shape:'hero', level:lvl, kind:'hero', boss:true, elite:true,
+  return {key:'hero', name:'Wędrowny Heros', shape:'hero', level:lvl, kind:'hero', boss:true, elite:true,
     refLevel: state.level, refTier: refTier(state.level),
     p:{light:'#cfe0f5',base:'#7f97c4',dark:'#3d4d70',eye:'#25190f'}};
 }
@@ -1869,8 +1923,9 @@ function stageList(z){
     .concat([{key:z.boss, idx:3, boss:true, cost:Math.round(zoneCost(z)*1.8)}]);
 }
 function stageMonster(z, idx){
-  return Object.assign({}, MONSTERS[stageList(z)[idx].key],
-    {refLevel: stageRefLevel(z, idx), refTier: z.tier});
+  const key = stageList(z)[idx].key;
+  return Object.assign({}, MONSTERS[key],
+    {key: key, refLevel: stageRefLevel(z, idx), refTier: z.tier});
 }
 function zoneProgress(zid){ return (state.progress && state.progress[zid]) || 0; }
 function stageUnlocked(z, st){ return st.idx <= zoneProgress(z.id); }
@@ -1986,7 +2041,7 @@ function battleRound(){
 function endBattle(won){
   clearInterval(battleTimer); battleTimer = null;
   const b = state.battle, m = b.monster, z = ZONES.find(x=>x.id===b.zoneId);
-  const loot = {won:won, name:m.name, boss:!!m.boss, hero:!!b.hero, shape:m.shape, p:m.p, zone:z?z.name:'',
+  const loot = {won:won, name:m.name, boss:!!m.boss, hero:!!b.hero, key:m.key, shape:m.shape, p:m.p, zone:z?z.name:'',
                 zoneId:b.zoneId, stageIdx:b.stageIdx, guard:b.guard, cost:b.cost||0,
                 gold:0, exp:0, gems:0, shard:0, item:null, lost:false, levelBefore:state.level};
   /* porażka zwraca energię wydaną na wyprawę */
@@ -2634,16 +2689,23 @@ function renderBattle(){
     bgStyle = z ? z.bg : 'linear-gradient(180deg,#9fb2d4 0%,#5b6f9c 46%,#28324f 100%)';
   }
   layer.hidden = false;
-  layer.style.background = bgStyle;
+  const arena = b.zoneId && ART_OK['arena:'+b.zoneId];
+  if(arena){
+    layer.style.background = 'url("'+arena+'") center bottom / cover no-repeat';
+    layer.classList.add('has-art');
+  } else {
+    layer.style.background = bgStyle;
+    layer.classList.remove('has-art');
+  }
   const hpP = Math.max(0,state.hp)/totalMaxHp()*100, hpM = Math.max(0,m.hp)/m.maxHp*100;
   layer.innerHTML =
     '<div class="bt-arena">'+
-      '<div class="bt-side"><div class="bt-stage'+(b.pHit?' hit':'')+'">'+creatureSVG('hero',{})+'</div>'+
+      '<div class="bt-side"><div class="bt-stage'+(b.pHit?' hit':'')+'">'+creatureArt('hero','hero',{})+'</div>'+
         '<div class="plate">'+state.name+' • '+state.level+'</div>'+
         '<div class="hbar bt-hp"><i class="hp" style="width:'+hpP+'%"></i></div>'+
         '<div class="hrow">'+Math.max(0,state.hp)+' / '+totalMaxHp()+'</div></div>'+
       '<div class="vs">VS</div>'+
-      '<div class="bt-side"><div class="bt-stage'+(b.mHit?' hit':'')+'">'+creatureSVG(m.shape,m.p)+'</div>'+
+      '<div class="bt-side"><div class="bt-stage'+(b.mHit?' hit':'')+'">'+creatureArt(m.key,m.shape,m.p)+'</div>'+
         '<div class="plate">'+m.name+(m.boss?' 👑':'')+' • '+m.level+'</div>'+
         '<div class="hbar bt-hp"><i class="hp" style="width:'+hpM+'%"></i></div>'+
         '<div class="hrow">'+Math.max(0,m.hp)+' / '+m.maxHp+'</div></div>'+
@@ -2667,7 +2729,7 @@ function renderHud(){
   const max = maxEnergy(), per = regenSeconds();
   const toNext = state.energy>=max ? 0 : per - ((Date.now()-state.lastRegen)/1000 % per);
   document.getElementById('hud-tl').innerHTML =
-    '<div class="hud-av">'+creatureSVG('hero',{})+'</div>'+
+    '<div class="hud-av">'+creatureArt('hero','hero',{})+'</div>'+
     '<div class="hud-st"><div class="hud-name">'+state.name+' • Poz. '+state.level+'</div>'+
       '<div class="hrow">❤<div class="hbar"><i class="hp" style="width:'+(Math.max(0,state.hp)/totalMaxHp()*100)+'%"></i></div>'+Math.max(0,state.hp)+'</div>'+
       '<div class="hrow">⚡<div class="hbar"><i class="en" style="width:'+(state.energy/max*100)+'%"></i></div>'+state.energy+'/'+max+'</div>'+
@@ -3273,7 +3335,7 @@ function pZone(zid){
     const m = MONSTERS[st.key], open = stageUnlocked(z, st), can = open && state.energy >= st.cost;
     h += '<div class="stage'+(st.boss?' boss':'')+(open?'':' locked')+'">'+
       '<div class="eta">'+(st.boss?'Boss':'Etap '+(st.idx+1))+'</div>'+
-      '<div class="art">'+(open ? creatureSVG(m.shape, m.p) : '<svg viewBox="0 0 100 100"><text x="50" y="66" text-anchor="middle" font-size="44">🔒</text></svg>')+'</div>'+
+      '<div class="art">'+(open ? creatureArt(st.key, m.shape, m.p) : '<svg viewBox="0 0 100 100"><text x="50" y="66" text-anchor="middle" font-size="44">🔒</text></svg>')+'</div>'+
       '<div class="nm">'+(open ? m.name : '???')+'</div>'+
       '<div class="lv">Poziom '+m.level+'</div>'+
       '<div class="lv">'+st.cost+' ⚡ energii</div>'+
@@ -3341,7 +3403,7 @@ function wireLoot(d, loot){
 function showLootModal(loot){
   if(!loot.won){
     const d = modal('<h3 class="display" style="color:var(--danger)">Porażka</h3>'+
-      '<div class="loot-art">'+creatureSVG(loot.shape, loot.p)+'</div>'+
+      '<div class="loot-art">'+creatureArt(loot.key, loot.shape, loot.p)+'</div>'+
       '<p>'+loot.name+' okazał się zbyt silny. Wracasz do posiadłości, by odzyskać siły.</p>'+
       (loot.refund ? '<p style="color:var(--energy);font-weight:700;margin:6px 0">⚡ Zwrócono '+loot.refund+' energii — przegrana nic Cię nie kosztuje.</p>' : '')+
       '<p class="muted" style="font-size:12.5px">Ulepsz ekwipunek w Kuźni, wzmocnij relikty albo rozbuduj Koszary.</p>'+
@@ -3352,7 +3414,7 @@ function showLootModal(loot){
   if(loot.guard){
     const nd = NODES.find(n=>n.id===loot.nodeId);
     const d = modal('<h3 class="display">Strażnik pokonany!</h3>'+
-      '<div class="loot-art">'+creatureSVG(loot.shape, loot.p)+'</div>'+
+      '<div class="loot-art">'+creatureArt(loot.key, loot.shape, loot.p)+'</div>'+
       '<div class="loot-row"><span>Złoto</span><b>+'+loot.gold+'</b></div>'+
       '<div class="loot-row"><span>Doświadczenie</span><b>+'+loot.exp+'</b></div>'+
       '<p style="color:var(--ok);font-weight:700;margin:9px 0 0">'+nd.icon+' '+nd.name+' — poziom '+loot.nodeLvl+'</p>'+
@@ -3363,7 +3425,7 @@ function showLootModal(loot){
   }
   let h = '<h3 class="display">Zwycięstwo!</h3>'+
     '<p class="muted" style="margin-top:-2px">Pokonano: '+loot.name+(loot.boss?' 👑':'')+'</p>'+
-    '<div class="loot-art">'+creatureSVG(loot.shape, loot.p)+'</div>'+
+    '<div class="loot-art">'+creatureArt(loot.key, loot.shape, loot.p)+'</div>'+
     '<div style="margin-top:8px">'+
     '<div class="loot-row"><span '+resTip('gold')+'>Złoto</span><b>+'+loot.gold+'</b></div>'+
     '<div class="loot-row"><span>Doświadczenie</span><b>+'+loot.exp+'</b></div>'+
@@ -3430,7 +3492,7 @@ function showHeroModal(){
   if(!hs || !hs.alive){ toast('Herosa już tu nie ma.'); return; }
   const m = heroMonster(), st = monsterStats(m), cost = heroCost();
   const d = modal('<h3 class="display">🦸 Wędrowny Heros</h3>'+
-    '<div class="loot-art" style="width:96px;height:96px">'+creatureSVG('hero', m.p)+'</div>'+
+    '<div class="loot-art" style="width:96px;height:96px">'+creatureArt('hero','hero', m.p)+'</div>'+
     '<p class="muted" style="margin-top:2px">Elitarny przeciwnik, który wędruje przez Eldren. Znika po 10 minutach '+
     'i wraca po 30–60 minutach.</p>'+
     '<div style="margin-top:8px">'+
@@ -3587,6 +3649,11 @@ setInterval(function(){
   if(state.battle || state.dungeon) return;
   tickHeroClock();
 }, 1000);
+
+probeArt(function(){
+  artReady = true;
+  if(Object.keys(ART_OK).length) render();
+});
 
 initPanZoom();
 initTips();
