@@ -198,6 +198,16 @@
   .ach.done{border-color:var(--ok);}
   .achk{width:27px;height:27px;flex:none;border-radius:50%;background:rgba(0,0,0,.3);border:2px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:13px;}
   .ach.done .achk{background:var(--ok);border-color:#4d7a34;color:#0d1206;}
+  .drop{margin-top:12px;border:2px dashed rgba(255,206,84,.45);border-radius:15px;padding:22px 16px;
+    display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center;cursor:pointer;
+    background:rgba(0,0,0,.22);transition:background .15s,border-color .15s;}
+  .drop:hover,.drop.over{background:rgba(255,206,84,.1);border-color:var(--gold);}
+  .drop:focus-visible{outline:2px solid var(--gold);outline-offset:2px;}
+  .drop b{font-size:14.5px;}
+  .athumb{width:42px;height:42px;flex:none;border-radius:10px;background:rgba(0,0,0,.35);
+    border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;
+    color:var(--text-faint);font-size:12px;overflow:hidden;}
+  .athumb img{width:100%;height:100%;object-fit:contain;}
   .shoprow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed rgba(255,255,255,.12);}
   .shoprow:last-child{border-bottom:none;}
   .bpreview{width:96px;height:96px;flex:none;}
@@ -606,15 +616,40 @@ const CREATURES = {
    Zasób, którego nie ma, po prostu nie istnieje: gra rysuje jak dotąd.
 ===================================================================== */
 const ART_DIR = 'art/';
-const ART_OK = {};           /* 'mob:slime1' -> 'art/mob-slime1.png' */
-let artReady = false;
-function artFileFor(key){
-  if(key === 'hero') return ['hero.png','hero.webp'];
+const ART_OK = {};           /* 'mob:slime1' -> 'art/mob-slime1.png' albo data URI */
+const ART_STORE_KEY = 'eldren-art-v1';
+let ART_IMPORTED = {};       /* zasoby wgrane przeciągnięciem — mają pierwszeństwo */
+let artReady = false, artJpgWarn = [];
+try{ ART_IMPORTED = JSON.parse(localStorage.getItem(ART_STORE_KEY) || '{}') || {}; }catch(e){ ART_IMPORTED = {}; }
+function saveArtStore(){
+  try{ localStorage.setItem(ART_STORE_KEY, JSON.stringify(ART_IMPORTED)); return true; }
+  catch(e){ toast('Brak miejsca w pamięci przeglądarki — usuń część grafik.'); return false; }
+}
+/* PNG jako pierwszy — ma przezroczystość; JPG działa, ale wyjdzie kwadrat */
+const ART_EXT = ['.png','.webp','.jpg','.jpeg'];
+function artBase(key){
+  if(key === 'hero') return 'hero';
   for(const z of ZONES){
-    if(z.boss === key) return ['boss-'+z.id+'.png','boss-'+z.id+'.webp'];
-    if(z.monsters.indexOf(key) >= 0) return ['mob-'+key+'.png','mob-'+key+'.webp'];
+    if(z.boss === key) return 'boss-'+z.id;
+    if(z.monsters.indexOf(key) >= 0) return 'mob-'+key;
   }
   return null;
+}
+function artFileFor(key){
+  const b = artBase(key);
+  return b ? ART_EXT.map(function(e){ return b+e; }) : null;
+}
+/* pełna lista gniazd — używana przez podgląd i import */
+function artSlots(){
+  const out = [{slot:'mob:hero', base:'hero', label:'Wędrowny Heros', kind:'mob'}];
+  ZONES.forEach(function(z){
+    z.monsters.forEach(function(k){
+      out.push({slot:'mob:'+k, base:'mob-'+k, label:MONSTERS[k].name, kind:'mob', zone:z.name});
+    });
+    out.push({slot:'mob:'+z.boss, base:'boss-'+z.id, label:MONSTERS[z.boss].name, kind:'mob', zone:z.name, boss:true});
+    out.push({slot:'arena:'+z.id, base:'arena-'+z.id, label:'Tło — '+z.name, kind:'arena', zone:z.name});
+  });
+  return out;
 }
 function probeArt(done){
   const jobs = [];
@@ -625,21 +660,136 @@ function probeArt(done){
     if(files) jobs.push({slot:'mob:'+k, files:files});
   });
   ZONES.forEach(function(z){
-    jobs.push({slot:'arena:'+z.id, files:['arena-'+z.id+'.jpg','arena-'+z.id+'.png','arena-'+z.id+'.webp']});
+    jobs.push({slot:'arena:'+z.id, files:['.jpg','.png','.webp','.jpeg'].map(function(e){ return 'arena-'+z.id+e; })});
   });
   let left = jobs.length;
   if(!left){ done(); return; }
   jobs.forEach(function(job){
+    if(ART_IMPORTED[job.slot]){ ART_OK[job.slot] = ART_IMPORTED[job.slot]; if(!--left) done(); return; }
     let i = 0;
     (function tryNext(){
       if(i >= job.files.length){ if(!--left) done(); return; }
       const url = ART_DIR + job.files[i++];
       const img = new Image();
-      img.onload = function(){ ART_OK[job.slot] = url; if(!--left) done(); };
+      img.onload = function(){
+        ART_OK[job.slot] = url;
+        if(job.slot.indexOf('mob:') === 0 && /\.jpe?g$/i.test(url)) artJpgWarn.push(url.split('/').pop());
+        if(!--left) done();
+      };
       img.onerror = tryNext;
       img.src = url;
     })();
   });
+}
+/* ---------------------------------------------------------------
+   Import grafiki przeciągnięciem. Obrazek wczytany z pliku przez
+   FileReader trafia do canvasu jako data URI, więc wolno odczytać
+   jego piksele — w odróżnieniu od obrazka z katalogu art/, który
+   przeglądarka blokuje. Dzięki temu da się wyciąć tło z JPG.
+----------------------------------------------------------------*/
+function colDist(a, b){
+  const r = a[0]-b[0], g = a[1]-b[1], bl = a[2]-b[2];
+  return Math.sqrt(r*r + g*g + bl*bl);
+}
+function keyOutBackground(ctx, W, H){
+  const img = ctx.getImageData(0, 0, W, H), d = img.data;
+  /* jakie kolory są na brzegu? (szachownica podglądu ma dwa) */
+  const bg = [], stepX = Math.max(1, W>>6), stepY = Math.max(1, H>>6);
+  function sample(x, y){
+    const i = (y*W + x)*4, c = [d[i], d[i+1], d[i+2]];
+    if(!bg.some(function(b){ return colDist(b, c) < 46; })) bg.push(c);
+  }
+  for(let x=0; x<W; x+=stepX){ sample(x, 0); sample(x, H-1); }
+  for(let y=0; y<H; y+=stepY){ sample(0, y); sample(W-1, y); }
+  if(bg.length > 4) return false;         /* brzeg nie jest jednolitym tłem */
+  const TOL = 54;
+  const isBg = function(i){
+    const c = [d[i], d[i+1], d[i+2]];
+    for(let k=0;k<bg.length;k++) if(colDist(bg[k], c) < TOL) return true;
+    return false;
+  };
+  /* wypełnienie od brzegu — wnętrze postaci w tym samym kolorze zostaje */
+  const seen = new Uint8Array(W*H);
+  const stack = [];
+  for(let x=0; x<W; x++){ stack.push(x, x + (H-1)*W); }
+  for(let y=0; y<H; y++){ stack.push(y*W, y*W + W-1); }
+  let removed = 0;
+  while(stack.length){
+    const p = stack.pop();
+    if(seen[p]) continue;
+    const i = p*4;
+    if(!isBg(i)) continue;
+    seen[p] = 1; d[i+3] = 0; removed++;
+    const x = p % W, y = (p - x) / W;
+    if(x > 0) stack.push(p-1);
+    if(x < W-1) stack.push(p+1);
+    if(y > 0) stack.push(p-W);
+    if(y < H-1) stack.push(p+W);
+  }
+  if(removed < W*H*0.04) return false;    /* prawie nic nie zeszło — zostaw jak było */
+  /* JPEG zostawia jasną obwódkę: piksel przy dziurze i wciąż bliski tłu znika */
+  const out = new Uint8Array(W*H);
+  for(let y=1; y<H-1; y++){
+    for(let x=1; x<W-1; x++){
+      const p = y*W + x;
+      if(seen[p]) continue;
+      let n = 0;
+      if(seen[p-1]) n++; if(seen[p+1]) n++; if(seen[p-W]) n++; if(seen[p+W]) n++;
+      if(n >= 1){
+        const i = p*4, c = [d[i], d[i+1], d[i+2]];
+        let near = false;
+        for(let k=0;k<bg.length;k++) if(colDist(bg[k], c) < TOL*1.7){ near = true; break; }
+        if(near) out[p] = 1;
+      }
+    }
+  }
+  for(let p=0; p<W*H; p++) if(out[p]) d[p*4+3] = 0;
+  ctx.putImageData(img, 0, 0);
+  return true;
+}
+function importArtFile(file, cb){
+  const name = file.name.replace(/\.[^.]+$/, '').toLowerCase();
+  const target = artSlots().find(function(s){ return s.base.toLowerCase() === name; });
+  if(!target){ cb({file:file.name, ok:false, why:'nieznana nazwa'}); return; }
+  const fr = new FileReader();
+  fr.onerror = function(){ cb({file:file.name, ok:false, why:'nie udało się odczytać'}); };
+  fr.onload = function(){
+    const img = new Image();
+    img.onerror = function(){ cb({file:file.name, ok:false, why:'to nie jest obrazek'}); };
+    img.onload = function(){
+      const arena = target.kind === 'arena';
+      const max = arena ? 1280 : 512;
+      const sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const W = Math.round(img.naturalWidth*sc), H = Math.round(img.naturalHeight*sc);
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d', {willReadFrequently:true});
+      ctx.drawImage(img, 0, 0, W, H);
+      let keyed = false;
+      if(!arena){
+        try{ keyed = keyOutBackground(ctx, W, H); }catch(e){ keyed = false; }
+      }
+      let url;
+      try{
+        url = cv.toDataURL(arena ? 'image/webp' : 'image/webp', arena ? 0.82 : 0.9);
+        if(url.indexOf('data:image/webp') !== 0) url = cv.toDataURL('image/png');
+      }catch(e){ cb({file:file.name, ok:false, why:'nie udało się zapisać'}); return; }
+      ART_IMPORTED[target.slot] = url;
+      ART_OK[target.slot] = url;
+      cb({file:file.name, ok:true, slot:target.slot, label:target.label, keyed:keyed, arena:arena,
+          kb:Math.round(url.length*0.75/1024)});
+    };
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+function importArtFiles(files, done){
+  const list = Array.prototype.slice.call(files);
+  const results = [];
+  (function next(){
+    if(!list.length){ saveArtStore(); done(results); return; }
+    importArtFile(list.shift(), function(r){ results.push(r); next(); });
+  })();
 }
 function creatureArt(key, shape, p, cls){
   const src = key && ART_OK['mob:'+key];
@@ -3288,7 +3438,79 @@ function pBuilding(id){
   }
   return h;
 }
-const PANEL_TITLES = {character:'Postać', inventory:'Ekwipunek', achievements:'Osiągnięcia', relics:'Relikty'};
+let lastImport = null;
+function artLogHTML(){
+  if(!lastImport) return '';
+  let h = '<div style="margin-top:11px">';
+  lastImport.forEach(function(r){
+    h += '<div class="stat-line"><span>'+r.file+'</span><span style="color:'+(r.ok?'var(--ok)':'#e0524a')+'">'+
+      (r.ok ? (r.label + (r.keyed ? ' • tło wycięte' : '') + ' • ' + r.kb + ' KB') : r.why)+'</span></div>';
+  });
+  return h + '</div>';
+}
+function pArt(){
+  const slots = artSlots();
+  const have = slots.filter(function(x){ return ART_OK[x.slot]; }).length;
+  let h = '<div class="card"><div class="between"><h3 style="margin:0">Wgrane zasoby</h3>'+
+    '<b style="color:var(--gold);font-size:17px">'+have+' / '+slots.length+'</b></div>'+
+    '<div class="bar-lg"><i style="width:'+(have/slots.length*100)+'%"></i></div>'+
+    '<p class="muted" style="margin:10px 0 0">Przeciągnij pliki tutaj albo kliknij pole poniżej. '+
+    'Nazwa pliku decyduje, gdzie trafi grafika — musi zgadzać się z nazwą gniazda z listy.</p>'+
+    '<div class="drop" id="artDrop" tabindex="0" role="button">'+
+      '<div style="font-size:30px;line-height:1">📥</div>'+
+      '<b>Upuść grafiki tutaj</b>'+
+      '<span class="muted">lub kliknij, by wybrać pliki</span>'+
+      '<span class="muted" style="font-size:11.5px">PNG, WEBP albo JPG • tło z JPG wytnę automatycznie</span>'+
+    '</div>'+
+    '<input type="file" id="artInput" accept="image/*" multiple hidden>'+
+    '<div id="artLog">'+artLogHTML()+'</div>'+
+    '<div class="row" style="margin-top:11px"><button class="btn sec sm" data-action="artclear">Usuń wgrane grafiki</button></div>'+
+    '</div>';
+  let zone = null;
+  slots.forEach(function(x){
+    if(x.zone !== zone){
+      if(zone !== null) h += '</div>';
+      zone = x.zone;
+      h += '<div class="card"><h3>'+(zone || 'Bohater')+'</h3>';
+    }
+    const src = ART_OK[x.slot];
+    h += '<div class="shoprow"><div style="min-width:0;display:flex;gap:10px;align-items:center">'+
+      '<div class="athumb">'+(src ? '<img src="'+src+'" alt="">' : '—')+'</div>'+
+      '<div style="min-width:0"><div style="font-weight:700;font-size:13.5px">'+x.label+'</div>'+
+      '<div class="muted"><code style="font-size:11.5px">'+x.base+'.png</code></div></div></div>'+
+      '<span class="muted" style="color:'+(src?'var(--ok)':'var(--text-faint)')+';font-weight:700;font-size:12px">'+
+      (src ? 'jest' : 'brak')+'</span></div>';
+  });
+  return h + '</div>';
+}
+function wireArtPanel(){
+  const drop = document.getElementById('artDrop'), inp = document.getElementById('artInput');
+  if(!drop || !inp) return;
+  const log = document.getElementById('artLog');
+  function handle(files){
+    if(!files || !files.length) return;
+    log.innerHTML = '<p class="muted" style="margin:10px 0 0">Wczytuję…</p>';
+    importArtFiles(files, function(res){
+      const ok = res.filter(function(r){ return r.ok; });
+      lastImport = res;                 /* przerysowanie panelu odtworzy tę listę */
+      if(ok.length) toast('🎨 Wgrano '+ok.length+' '+(ok.length===1?'grafikę':'grafik'));
+      render();
+      const l = document.getElementById('artLog');
+      if(l) l.innerHTML = artLogHTML();
+    });
+  }
+  drop.addEventListener('click', function(){ inp.click(); });
+  drop.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); inp.click(); } });
+  inp.addEventListener('change', function(){ handle(inp.files); inp.value=''; });
+  ['dragenter','dragover'].forEach(function(ev){
+    drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('over'); });
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('over'); });
+  });
+  drop.addEventListener('drop', function(e){ handle(e.dataTransfer && e.dataTransfer.files); });
+}
+const PANEL_TITLES = {character:'Postać', inventory:'Ekwipunek', achievements:'Osiągnięcia', relics:'Relikty', art:'Grafika'};
 function renderPanel(){
   const layer = document.getElementById('layer-panel');
   if(!state.openPanel){ layer.hidden = true; layer.innerHTML = ''; return; }
@@ -3310,11 +3532,13 @@ function renderPanel(){
     body = state.openPanel==='character' ? pCharacter()
          : state.openPanel==='inventory' ? pInventory()
          : state.openPanel==='relics' ? pRelics()
+         : state.openPanel==='art' ? pArt()
          : pAchievements();
   }
   layer.hidden = false;
   layer.innerHTML = '<div class="pcard"><button class="pclose" data-action="closepanel">✕</button>'+
     '<h2 class="ptitle display">'+title+'</h2>'+(sub?'<p class="psub">'+sub+'</p>':'')+body+'</div>';
+  if(state.openPanel === 'art') wireArtPanel();
 }
 
 /* =====================================================================
@@ -3523,7 +3747,11 @@ function showSettings(){
     '<p class="muted" style="font-size:12px;margin-top:10px">Postęp zapisuje się w tej przeglądarce.</p>'+
     '<div class="row"><button class="btn sec" data-close="1">Zamknij</button>'+
     '<button class="btn" id="saveName">Zapisz</button></div>'+
+    '<div class="row"><button class="btn sec" id="openArt">🎨 Grafika i zasoby</button></div>'+
     '<div class="row"><button class="btn dgr" id="resetGame">Nowa gra</button></div>');
+  bg.querySelector('#openArt').onclick = function(){
+    bg.remove(); state.openPanel = 'art'; renderPanel();
+  };
   bg.querySelector('[data-close]').onclick = ()=>bg.remove();
   bg.querySelector('#saveName').onclick = ()=>{
     const v = (bg.querySelector('#heroName').value||'').trim();
@@ -3590,6 +3818,13 @@ document.addEventListener('click', function(e){
   if(a==='resetstats'){ resetStats(); return; }
   if(a==='dungeon'){ enterDungeon(id); return; }
   if(a==='dgquit'){ quitDungeon(); return; }
+  if(a==='artclear'){
+    ART_IMPORTED = {}; lastImport = null;
+    try{ localStorage.removeItem(ART_STORE_KEY); }catch(e){}
+    Object.keys(ART_OK).forEach(function(k){ delete ART_OK[k]; });
+    probeArt(function(){ toast('Wgrane grafiki usunięte.'); render(); });
+    return;
+  }
   if(a==='hero'){ showHeroModal(); return; }
   if(a==='plot'){
     if(SOON[id]) showSoonModal(id);
@@ -3653,6 +3888,12 @@ setInterval(function(){
 probeArt(function(){
   artReady = true;
   if(Object.keys(ART_OK).length) render();
+  if(artJpgWarn.length){
+    setTimeout(function(){
+      toast('⚠ '+artJpgWarn.length+' sprite\'ów w JPG — brak przezroczystości, wyjdzie kwadrat. '+
+        'Wgraj je przez ⚙️ → Grafika, a wytnę tło.');
+    }, 900);
+  }
 });
 
 initPanZoom();
