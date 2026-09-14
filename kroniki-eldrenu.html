@@ -99,6 +99,8 @@
   .plus:disabled{background:#5a5040;color:#8a8272;}
   .pts-badge{background:var(--danger);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;font-weight:800;}
   .eq-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+  .eq-doll{display:grid;grid-template-columns:repeat(3,54px);gap:7px;justify-content:center;margin-bottom:10px;}
+  .eq-doll .cell.gap{border:none;background:none;box-shadow:none;cursor:default;}
   .bag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:7px;max-height:122px;overflow-y:auto;padding-right:2px;}
   .cell{aspect-ratio:1/1;border-radius:13px;border:2px solid rgba(255,255,255,.18);background:rgba(0,0,0,.34);
     display:flex;align-items:center;justify-content:center;font-size:21px;position:relative;cursor:pointer;
@@ -289,6 +291,7 @@
     .nav-btn{width:78px;height:78px;font-size:11.5px;}
     .nav-btn span.ic{font-size:26px;}
     .cell.eqslot{width:46px;height:46px;}
+    .eq-doll{grid-template-columns:repeat(3,46px);gap:6px;}
     .bag-grid{grid-template-columns:repeat(auto-fill,minmax(42px,1fr));max-height:96px;}
     .bt-side{width:45%;}
     #tip{width:220px;}
@@ -1776,9 +1779,15 @@ ZONES.forEach(function(z, i){
 });
 /* poziom bohatera, jakiego kraina spodziewa się na danym etapie */
 function stageRefLevel(z, idx){
-  const f = idx >= 3 ? 0.72 : (0.2 + idx*0.16);
+  /* pierwszy etap krainy mierzymy dokładnie poziomem jej odblokowania —
+     gracz wchodzi tu od razu, jeszcze bez łupu z tej krainy */
+  const f = idx >= 3 ? 0.72 : idx*0.18;
   return Math.max(1, Math.round(z.unlockLevel + z.span*f));
 }
+/* Ile "dorobku" (ekwipunek, punkty, budynki) ma realnie bohater na danym
+   poziomie. Na 1. poziomie nie ma NIC — bez tego pierwszy szlam byłby
+   liczony jak przeciwnik dla gracza w pełnej zbroi i nie dało się go ubić. */
+function gearFrac(L){ return Math.min(1, Math.max(0, (L-1)/5)); }
 const REF_CACHE = {};
 function refPower(L, tier){
   const ck = L+'/'+(tier||0);
@@ -1787,15 +1796,15 @@ function refPower(L, tier){
   const rar = (L < 10 ? RARITIES[0] : RARITIES[1]).mult;
   const upgM = 1 + 0.08*Math.min(6, Math.floor(L/6));
   const bar = Math.min(15, Math.floor(L/6));
-  const pts = Math.round((L-1)*3*0.8);
-  let atk = baseAtk(L) + bar*3 + Math.round(pts*0.4)*2;
-  let def = baseDef(L) + bar*2 + Math.round(Math.round(pts*0.4)*1.5);
+  const pts = Math.round((L-1)*3*0.8), ap = Math.round(pts*0.4), g = gearFrac(L);
+  let atk = baseAtk(L) + Math.round((bar*3 + ap*2) * g);
+  let def = baseDef(L) + Math.round((bar*2 + Math.round(ap*1.5)) * g);
   let hp  = baseHp(L);
   SLOT_KEYS.forEach(function(k){
     const b = SLOT_BASE[k];
-    if(b.atk) atk += Math.round(Math.max(1, Math.round(b.atk[idx]*rar))*upgM);
-    if(b.def) def += Math.round(Math.max(1, Math.round(b.def[idx]*rar))*upgM);
-    if(b.hp)  hp  += Math.round(Math.max(1, Math.round(b.hp[idx]*rar))*upgM);
+    if(b.atk) atk += Math.round(Math.max(1, Math.round(b.atk[idx]*rar))*upgM*g);
+    if(b.def) def += Math.round(Math.max(1, Math.round(b.def[idx]*rar))*upgM*g);
+    if(b.hp)  hp  += Math.round(Math.max(1, Math.round(b.hp[idx]*rar))*upgM*g);
   });
   REF_CACHE[ck] = {atk:atk, def:def, hp:hp};
   return REF_CACHE[ck];
@@ -2721,6 +2730,22 @@ function cellHTML(it, kind, key){
     'data-tip="'+(kind==='eq'?'eq:'+key:'bag:'+it.id)+'">'+itemIcon(it, kind==='eq'?34:30)+
     (it.upg?'<span class="up">+'+it.upg+'</span>':'')+'</div>';
 }
+/* układ „paper doll" — hełm na górze, buty na dole, tarcza obok broni */
+const EQ_LAYOUT = [
+  [null,     'helm',   null    ],
+  ['ring',   'amulet', 'gloves'],
+  ['weapon', 'armor',  'shield'],
+  [null,     'boots',  null    ],
+];
+function eqDollHTML(){
+  let h = '<div class="eq-doll">';
+  EQ_LAYOUT.forEach(function(row){
+    row.forEach(function(k){
+      h += k ? cellHTML(state.equipment[k], 'eq', k) : '<div class="cell eqslot gap"></div>';
+    });
+  });
+  return h+'</div>';
+}
 function renderDock(){
   const open = state.dockOpen !== false;
   const pts = state.points||0;
@@ -2747,9 +2772,8 @@ function renderDock(){
       '<div class="srow"><span>Bonus zdobyczy</span><b>+'+bonusPct()+'%</b></div></div>';
     h += '</div>';
     /* always-visible footer: equipment + bag */
-    h += '<div class="dock-foot"><div class="sec-h">Założone</div><div class="eq-row">';
-    SLOT_KEYS.forEach(k=>{ h += cellHTML(state.equipment[k], 'eq', k); });
-    h += '</div><div class="sec-h" style="margin-top:9px">Torba '+state.inventory.length+'/'+invCap()+'</div>';
+    h += '<div class="dock-foot"><div class="sec-h">Założone</div>'+eqDollHTML();
+    h += '<div class="sec-h" style="margin-top:9px">Torba '+state.inventory.length+'/'+invCap()+'</div>';
     if(!state.inventory.length) h += '<div class="bag-empty">Pusto — ruszaj na wyprawę.</div>';
     else {
       h += '<div class="bag-grid">';
@@ -2914,7 +2938,8 @@ function pCharacter(){
     '<p class="muted" style="margin:10px 0 0">Koszary: +'+(bLvl('barracks')*3)+' ataku, +'+(bLvl('barracks')*2)+' obrony, +'+bLvl('barracks')+'% szybkości. '+
     'Kapliczka: +'+(bLvl('shrine')*4)+'% doświadczenia.</p></div>';
   h += pRelicStrip();
-  h += '<div class="card"><h3>Wyposażenie ('+SLOT_KEYS.filter(k=>state.equipment[k]).length+'/'+SLOT_KEYS.length+')</h3><div class="eq-grid">';
+  h += '<div class="card"><h3>Wyposażenie ('+SLOT_KEYS.filter(k=>state.equipment[k]).length+'/'+SLOT_KEYS.length+')</h3>'+
+    eqDollHTML()+'<div class="eq-grid">';
   SLOT_KEYS.forEach(slot=>{
     const it = state.equipment[slot], b = SLOT_BASE[slot];
     h += '<div class="slot'+(it?' on':'')+'"><div class="sic">'+(it?itemIcon(it,28):b.icon)+'</div>';
@@ -3039,9 +3064,9 @@ function pRelics(){
   return h+'</div>';
 }
 function pInventory(){
-  let h = '<div class="card"><h3>Założone</h3><div class="eq-row">';
-  SLOT_KEYS.forEach(k=>{ h += cellHTML(state.equipment[k], 'eq', k); });
-  h += '</div><p class="muted" style="margin:9px 0 0">Kliknij przedmiot, by zobaczyć statystyki i nim zarządzać.</p></div>';
+  let h = '<div class="card"><h3>Założone ('+SLOT_KEYS.filter(k=>state.equipment[k]).length+'/'+SLOT_KEYS.length+')</h3>'+
+    eqDollHTML()+
+    '<p class="muted" style="margin:9px 0 0">Kliknij przedmiot, by zobaczyć statystyki i nim zarządzać.</p></div>';
   h += '<div class="card"><div class="between"><h3 style="margin:0">Torba ('+state.inventory.length+'/'+invCap()+')</h3>'+
     '<button class="btn sec sm" data-action="sellcommons">Sprzedaj pospolite</button></div>';
   if(!state.inventory.length) h += '<p class="muted" style="margin:10px 0 0">Pusto. Ruszaj na mapę świata i pokonuj potwory.</p>';
