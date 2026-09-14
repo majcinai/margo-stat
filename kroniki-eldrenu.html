@@ -113,17 +113,22 @@
   .bag-empty{font-size:13px;color:var(--text-faint);padding:6px 2px;}
 
   /* ---------- TOOLTIP ---------- */
-  #tip{position:fixed;z-index:66;width:250px;background:linear-gradient(180deg,#3d2c1b,#241a10);
+  #tip{position:fixed;z-index:66;width:266px;background:linear-gradient(180deg,#3d2c1b,#241a10);
     border:2px solid var(--wood);border-radius:16px;padding:11px 13px;box-shadow:0 14px 30px rgba(0,0,0,.65);}
   #tip h4{margin:0;font-size:14.5px;font-weight:800;}
   #tip .trar{font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;display:inline-block;margin:5px 0 7px;}
   #tip .tstat{font-size:13.5px;color:var(--text-dim);line-height:1.6;}
+  #tip .tstat-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;}
+  #tip .tcmp{margin-top:9px;padding-top:8px;border-top:2px solid rgba(255,255,255,.12);}
+  #tip .tcmp-h{font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--text-faint);margin-bottom:5px;}
+  #tip .tcmp-row{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;line-height:1.3;}
+  #tip .tcmp-v{font-size:12.5px;font-weight:800;margin-top:5px;line-height:1.35;}
   #tip .trow{display:flex;gap:7px;margin-top:10px;}
   #tip .trow .btn{flex:1;text-align:center;}
 
   /* ---------- BATTLE ---------- */
   #layer-battle{z-index:30;display:flex;flex-direction:column;}
-  .bt-arena{flex:1;display:flex;align-items:center;justify-content:space-around;padding:96px 4vw 0;gap:8px;position:relative;}
+  .bt-arena{flex:1;min-height:0;display:flex;align-items:center;justify-content:space-around;padding:96px 4vw 0;gap:8px;position:relative;}
   .bt-side{width:42%;max-width:230px;display:flex;flex-direction:column;align-items:center;gap:7px;}
   .bt-stage{width:100%;max-width:172px;aspect-ratio:1/1;position:relative;}
   .bt-stage svg.creature{width:100%;height:100%;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35));}
@@ -133,11 +138,12 @@
     padding:3px 11px;border-radius:10px;box-shadow:0 3px 6px var(--sh);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .bt-hp{width:100%;}
   .vs{font-family:'Cinzel',serif;font-size:16px;color:#fff;text-shadow:0 2px 5px #000;align-self:center;}
-  .bt-log-wrap{margin:0 10px 12px;background:var(--hud);backdrop-filter:blur(4px);border-radius:16px;padding:10px 14px;
+  .bt-log-wrap{flex:none;margin:0 10px 12px;background:var(--hud);backdrop-filter:blur(4px);border-radius:16px;padding:10px 14px;
     box-shadow:0 5px 14px var(--sh),inset 0 1px 0 rgba(255,255,255,.1);}
   .bt-log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;}
   .bt-log-head b{color:var(--gold);font-size:14px;}
-  .bt-log{max-height:15vh;overflow-y:auto;display:flex;flex-direction:column-reverse;font-size:13.5px;color:var(--text-dim);}
+  .bt-log{height:clamp(84px,15vh,148px);overflow-y:auto;display:flex;flex-direction:column-reverse;
+    font-size:13.5px;color:var(--text-dim);overscroll-behavior:contain;}
   .bt-log div{padding:2px 0;border-bottom:1px dashed rgba(255,255,255,.08);}
   .bt-log div:first-child{color:var(--text);}
   .flee{font-size:12px;padding:6px 11px;border-radius:10px;background:rgba(192,57,43,.22);border:2px solid var(--danger);color:#ffb8b0;font-weight:700;}
@@ -294,6 +300,7 @@
     .eq-doll{grid-template-columns:repeat(3,46px);gap:6px;}
     .bag-grid{grid-template-columns:repeat(auto-fill,minmax(42px,1fr));max-height:96px;}
     .bt-side{width:45%;}
+    .bt-log{height:clamp(72px,13vh,120px);}
     #tip{width:220px;}
   }
 </style>
@@ -407,9 +414,9 @@ function isoPlatform(x,y,w,d,top,side,depth){
   s += poly([D,C,[C[0],C[1]+7],[D[0],D[1]+7]], shade(top,-0.16));
   return s;
 }
-function label(x,y,z,text,color,size){
+function label(x,y,z,text,color,size,id){
   const p = iso(x,y,z);
-  return '<text x="'+p[0].toFixed(1)+'" y="'+p[1].toFixed(1)+'" text-anchor="middle" font-family="Baloo 2,sans-serif" '+
+  return '<text'+(id?' id="'+id+'"':'')+' x="'+p[0].toFixed(1)+'" y="'+p[1].toFixed(1)+'" text-anchor="middle" font-family="Baloo 2,sans-serif" '+
     'font-size="'+(size||13)+'" font-weight="800" fill="'+(color||'#fff6e2')+'" stroke="rgba(0,0,0,.55)" stroke-width="3" paint-order="stroke">'+text+'</text>';
 }
 
@@ -1373,6 +1380,13 @@ function createArtifact(key, tier){
   return it;
 }
 function rarityInfo(id){ return RARITIES.find(r=>r.id===id) || RARITIES[0]; }
+const STAT_WEIGHT = {atk:2.4, def:2.0, hp:0.75, crit:3.2, critpow:0.55, dodge:3.0, stun:2.8, spd:2.2, bonus:1.6, block:3.0};
+function itemScore(it){
+  if(!it) return 0;
+  let v = 0;
+  STAT_KEYS.forEach(function(k){ if(it[k]) v += effStat(it,k) * (STAT_WEIGHT[k]||1); });
+  return Math.round(v);
+}
 function itemName(it){ return it.name + (it.upg ? ' +'+it.upg : ''); }
 function itemStats(it){
   return STAT_KEYS.filter(k=>it[k]).map(k=>STAT_META[k].ic+effStat(it,k)+STAT_META[k].suf).join(' ');
@@ -1553,6 +1567,24 @@ function heroMonster(){
     p:{light:'#cfe0f5',base:'#7f97c4',dark:'#3d4d70',eye:'#25190f'}};
 }
 function heroCost(){ return 20 + Math.floor(state.level/2); }
+function heroTimeLeft(){
+  const hs = state.heroSpawn;
+  return hs && hs.alive ? Math.max(0, HERO_LIFETIME - (Date.now() - hs.at)) : 0;
+}
+function heroSubLabel(){
+  return 'poz. '+heroMonster().level+' • '+heroCost()+' ⚡ • znika za '+fmtT(heroTimeLeft()/1000);
+}
+/* odliczanie musi tykać co sekundę, a nie co pełne przerysowanie mapy */
+function tickHeroClock(){
+  const hs = state.heroSpawn;
+  if(!hs) return;
+  if(hs.alive && heroTimeLeft() <= 0){ tickHero(); return; }
+  if(!hs.alive) return;
+  const el = document.getElementById('heroTimer');
+  if(el) el.textContent = heroSubLabel();
+  const mEl = document.getElementById('heroModalClock');
+  if(mEl) mEl.textContent = fmtT(heroTimeLeft()/1000);
+}
 const POINTS_PER_LEVEL = 3;
 function grantExp(n){
   state.exp += n;
@@ -2576,8 +2608,7 @@ function renderWorld(){
     g += '<g transform="translate('+(c[0]-33).toFixed(1)+','+(c[1]-74).toFixed(1)+')">'+
          '<svg width="66" height="66" viewBox="0 0 100 100">'+CREATURES.hero({}, 'wh'+(uidSeq++))+'</svg></g>';
     g += label(spot.x, spot.y, 3.35, '🦸 Wędrowny Heros', '#ffe9b8', 14);
-    g += label(spot.x, spot.y, 3.0, 'poz. '+hm.level+' • '+heroCost()+' ⚡ • znika za '+
-      fmtT((HERO_LIFETIME-(Date.now()-hs.at))/1000), '#fff6e2', 11.5);
+    g += label(spot.x, spot.y, 3.0, heroSubLabel(), '#fff6e2', 11.5, 'heroTimer');
     draw.push({k:spot.x+spot.y+0.01, s:'<g class="clickable" data-action="hero">'+g+'</g>'});
   }
   draw.sort((a,b)=>a.k-b.k);
@@ -2809,16 +2840,43 @@ function showTip(ref, kind, key){
   const it = kind==='eq' ? state.equipment[key] : state.inventory.find(x=>x.id===key);
   if(!it) return;
   const r = rarityInfo(it.rarity), b = SLOT_BASE[it.slot];
-  const lines = STAT_KEYS.filter(k=>it[k]).map(function(k){
-    const m = STAT_META[k];
-    return m.ic+' '+m.name+' <b>+'+effStat(it,k)+m.suf+'</b>';
+  /* przedmiot z torby zestawiamy z tym, co siedzi w jego slocie */
+  const worn = kind === 'bag' ? state.equipment[it.slot] : null;
+  const cmp = !!(worn && worn.id !== it.id);
+  const lines = STAT_KEYS.filter(function(k){ return it[k] || (cmp && worn[k]); }).map(function(k){
+    const m = STAT_META[k], nv = it[k] ? effStat(it,k) : 0;
+    let row = '<span>'+m.ic+' '+m.name+' <b>'+(nv ? '+'+nv+m.suf : '—')+'</b></span>';
+    if(cmp){
+      const d = nv - (worn[k] ? effStat(worn,k) : 0);
+      const col = d > 0 ? 'var(--ok)' : d < 0 ? '#e0524a' : 'var(--text-faint)';
+      row += '<span style="color:'+col+';font-weight:800;white-space:nowrap">'+
+        (d > 0 ? '▲ +'+d : d < 0 ? '▼ '+d : '=')+'</span>';
+    }
+    return '<div class="tstat-row">'+row+'</div>';
   });
+  let cmpHTML = '';
+  if(kind === 'bag'){
+    if(cmp){
+      const wr = rarityInfo(worn.rarity), ds = itemScore(it) - itemScore(worn);
+      const verdict = ds > 0 ? {t:'Lepszy od założonego', c:'var(--ok)'}
+                    : ds < 0 ? {t:'Słabszy od założonego', c:'#e0524a'}
+                    : {t:'Porównywalny', c:'var(--text-dim)'};
+      cmpHTML = '<div class="tcmp"><div class="tcmp-h">Porównanie — '+b.label.toLowerCase()+'</div>'+
+        '<div class="tcmp-row">'+itemIcon(worn,22)+'<span style="color:'+wr.color+'">'+itemName(worn)+'</span></div>'+
+        '<div class="tcmp-v" style="color:'+verdict.c+'">'+verdict.t+
+        (ds ? ' ('+(ds>0?'+':'')+ds+' mocy)' : '')+'</div></div>';
+    } else {
+      cmpHTML = '<div class="tcmp"><div class="tcmp-v" style="color:var(--ok)">'+
+        SLOT_BASE[it.slot].icon+' Slot „'+b.label+'" jest pusty — każdy bonus to czysty zysk.</div></div>';
+    }
+  }
   const el = document.createElement('div');
   el.id = 'tip';
   el.dataset.key = kind+':'+key;
   el.innerHTML = '<h4 style="color:'+r.color+';display:flex;align-items:center;gap:7px">'+itemIcon(it,26)+itemName(it)+'</h4>'+
     '<span class="trar" style="background:'+r.color+'33;color:'+r.color+'">'+r.label+' • '+b.label+' • poz. '+it.tier+'</span>'+
-    '<div class="tstat">'+lines.join('<br>')+'</div>'+
+    '<div class="tstat">'+lines.join('')+'</div>'+
+    cmpHTML+
     (it.flavor ? '<div class="tstat" style="margin-top:7px;font-style:italic;color:#ffb98a">„'+it.flavor+'"</div>' : '')+
     (kind==='eq'
       ? '<div class="trow"><button class="btn sec sm" data-action="unequip" data-id="'+key+'">Zdejmij</button></div>'
@@ -3379,7 +3437,7 @@ function showHeroModal(){
     '<div class="loot-row"><span>Poziom</span><b>'+m.level+'</b></div>'+
     '<div class="loot-row"><span>Życie</span><b>'+st.hp+'</b></div>'+
     '<div class="loot-row"><span>Koszt wyprawy</span><b>'+cost+' ⚡</b></div>'+
-    '<div class="loot-row"><span>Znika za</span><b>'+fmtT((HERO_LIFETIME-(Date.now()-hs.at))/1000)+'</b></div>'+
+    '<div class="loot-row"><span>Znika za</span><b id="heroModalClock">'+fmtT(heroTimeLeft()/1000)+'</b></div>'+
     '</div>'+
     '<p style="color:#ff8a3c;font-weight:700;font-size:13px;margin:9px 0 0">Tylko tutaj wypadają artefakty — 5% szansy.</p>'+
     '<p class="muted" style="font-size:12.5px">Poza tym: gwarantowany przedmiot epicki lub lepszy, kryształy i odłamki reliktów.</p>'+
@@ -3524,6 +3582,11 @@ try{
   window.claude && window.claude.hot && window.claude.hot.snapshot &&
   window.claude.hot.snapshot(function(){ return {__eldren: state}; });
 }catch(e){}
+
+setInterval(function(){
+  if(state.battle || state.dungeon) return;
+  tickHeroClock();
+}, 1000);
 
 initPanZoom();
 initTips();
