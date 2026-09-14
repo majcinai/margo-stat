@@ -1,0 +1,3516 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Kroniki Eldrenu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Baloo+2:wght@500;600;700;800&display=swap">
+<style>
+  :root{
+    --sky-a:#9fd3ef; --sky-b:#d8eef0;
+    --gold:#ffce54; --gold-2:#f0a830; --gold-dark:#a86b16;
+    --wood:#8a5a34; --wood-dark:#4e3018;
+    --panel:#2a1e13; --panel-2:#3a2a1a;
+    --hud:rgba(26,18,10,.82);
+    --text:#fff6e2; --text-dim:#d8c6a4; --text-faint:#9c8a6c;
+    --hp:#e05a4a; --energy:#4fc3e0; --exp:#8bd15a;
+    --danger:#c0392b; --ok:#7dbb5a;
+    --rarity-common:#b6ac9c; --rarity-uncommon:#68c164; --rarity-rare:#5b9fe8;
+    --rarity-epic:#b57cf0; --rarity-legendary:#f0b23e;
+    --sh:rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;}
+  body{font-family:'Baloo 2',ui-rounded,system-ui,sans-serif;color:var(--text);background:#101820;}
+  .display{font-family:'Cinzel',serif;}
+  #app{position:fixed;inset:0;overflow:hidden;}
+  button{font-family:inherit;border:none;cursor:pointer;}
+
+  .layer{position:absolute;inset:0;}
+  #layer-castle{background:#5f9440;}
+  #layer-world{background:#4d7c3a;}
+  .iso-stage{position:absolute;inset:0;display:block;transform-origin:50% 50%;touch-action:none;will-change:transform;}
+  .iso-stage > svg{width:100%;height:100%;display:block;}
+  .clickable{cursor:pointer;}
+  .clickable:hover{filter:brightness(1.08);}
+  @keyframes coinbob{0%,100%{transform:translateY(0);}50%{transform:translateY(-6px);}}
+  .coin-ready{animation:coinbob 1.4s ease-in-out infinite;}
+  @keyframes pulseRing{0%,100%{opacity:.35;}50%{opacity:.9;}}
+  .pulse{animation:pulseRing 1.8s ease-in-out infinite;}
+  @media (prefers-reduced-motion: reduce){.coin-ready,.pulse,.bobber{animation:none !important;}}
+
+  /* ---------- HUD ---------- */
+  .hud{position:absolute;inset:0;z-index:40;pointer-events:none;}
+  .hud > *{pointer-events:auto;}
+  .hud-tl{position:absolute;top:12px;left:12px;display:flex;gap:11px;align-items:center;
+    background:var(--hud);backdrop-filter:blur(4px);border-radius:22px;padding:9px 18px 9px 9px;
+    box-shadow:0 6px 16px var(--sh),inset 0 1px 0 rgba(255,255,255,.12);max-width:min(78vw,340px);}
+  .hud-av{width:62px;height:62px;flex:none;border-radius:50%;overflow:hidden;
+    background:radial-gradient(circle at 40% 30%,#cfe0f5,#7f97c4);border:3px solid var(--gold);box-shadow:0 3px 8px var(--sh);}
+  .hud-av svg{width:100%;height:100%;transform:scale(1.35) translateY(6%);}
+  .hud-st{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1;}
+  .hud-name{font-size:15px;font-weight:800;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.2px;}
+  .hbar{position:relative;height:13px;border-radius:7px;background:rgba(0,0,0,.45);overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,.6);}
+  .hbar i{display:block;height:100%;border-radius:6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.35);}
+  .hbar i.hp{background:linear-gradient(180deg,#ff8a7a,var(--hp));}
+  .hbar i.en{background:linear-gradient(180deg,#8fe4f5,var(--energy));}
+  .hbar i.xp{background:linear-gradient(180deg,#b6ea86,var(--exp));}
+  .hrow{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);}
+  .hrow .hbar{flex:1;}
+
+  .hud-tr{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;align-items:flex-end;gap:9px;}
+  .res-row{display:flex;gap:8px;}
+  .res{background:var(--hud);backdrop-filter:blur(4px);border-radius:17px;padding:7px 15px;display:flex;align-items:center;gap:6px;
+    font-weight:800;font-size:16px;box-shadow:0 5px 12px var(--sh),inset 0 1px 0 rgba(255,255,255,.1);}
+  .res.gold{color:var(--gold);} .res.gem{color:#8fe0ff;}
+  .coin{width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 34% 32%,#fff2b8,var(--gold-dark));box-shadow:inset 0 0 0 1px #7a4e12;}
+  .icon-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:min(60vw,260px);}
+  .ibtn{width:52px;height:52px;border-radius:17px;display:flex;align-items:center;justify-content:center;font-size:24px;
+    background:linear-gradient(180deg,#45301c,#2a1e13);
+    box-shadow:0 5px 12px var(--sh),inset 0 1px 0 rgba(255,255,255,.14);border:2px solid rgba(255,206,84,.35);}
+  .ibtn:hover{border-color:var(--gold);}
+  .ibtn.dim{opacity:.62;}
+
+  .nav-btn{position:absolute;right:14px;bottom:16px;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:3px;padding:0;line-height:1;
+    width:96px;height:96px;border-radius:50%;background:radial-gradient(circle at 40% 30%,#5c8f4a,#2f5a28);
+    border:3px solid var(--gold);color:var(--text);font-weight:800;font-size:13px;
+    box-shadow:0 7px 18px var(--sh),inset 0 2px 0 rgba(255,255,255,.18);z-index:41;}
+  .nav-btn span.ic{font-size:30px;line-height:1;display:block;height:32px;
+    display:flex;align-items:center;justify-content:center;}
+  .nav-btn span.lb{display:block;line-height:1;}
+  .nav-btn.castle{background:radial-gradient(circle at 40% 30%,#7a6ab0,#3d3568);}
+
+  /* ---------- CHARACTER SIDEBAR ---------- */
+  .dock{position:absolute;left:12px;top:132px;max-height:calc(100vh - 156px);z-index:41;width:246px;display:flex;flex-direction:column;
+    background:var(--hud);backdrop-filter:blur(4px);border-radius:20px;padding:10px 12px 12px;
+    box-shadow:0 7px 18px var(--sh),inset 0 1px 0 rgba(255,255,255,.1);}
+  .dock.min{width:auto;bottom:auto;padding:8px 12px;}
+  .dock-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:none;}
+  .dock-head b{font-size:13.5px;color:var(--gold);}
+  .dock-tog{width:32px;height:32px;border-radius:11px;background:rgba(0,0,0,.38);color:var(--text);font-size:15px;
+    border:2px solid rgba(255,206,84,.4);display:flex;align-items:center;justify-content:center;flex:none;}
+  .dock-body{margin-top:9px;flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:9px;padding-right:3px;}
+  .dock-foot{flex:none;margin-top:9px;padding-top:9px;border-top:2px solid rgba(255,255,255,.1);}
+  .sblock{background:rgba(0,0,0,.26);border-radius:13px;padding:9px 10px;}
+  .sec-h{font-size:10.5px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:var(--gold);margin-bottom:5px;}
+  .srow{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:2.5px 0;color:var(--text-dim);}
+  .srow b{color:var(--text);font-weight:700;}
+  .attr{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;padding:3px 0;color:var(--text-dim);}
+  .plus{width:23px;height:23px;border-radius:7px;background:linear-gradient(180deg,var(--gold),var(--gold-2));
+    color:#3a2408;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;flex:none;}
+  .plus:disabled{background:#5a5040;color:#8a8272;}
+  .pts-badge{background:var(--danger);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;font-weight:800;}
+  .eq-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+  .bag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:7px;max-height:122px;overflow-y:auto;padding-right:2px;}
+  .cell{aspect-ratio:1/1;border-radius:13px;border:2px solid rgba(255,255,255,.18);background:rgba(0,0,0,.34);
+    display:flex;align-items:center;justify-content:center;font-size:21px;position:relative;cursor:pointer;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08);}
+  .cell:hover{filter:brightness(1.15);}
+  .cell.eqslot{width:54px;height:54px;flex:none;}
+  .cell.free{border-style:dashed;opacity:.45;font-size:15px;cursor:default;}
+  .cell .up{position:absolute;right:3px;bottom:1px;font-size:11px;font-weight:800;color:var(--gold);text-shadow:0 1px 2px #000;}
+  .cell .dot{position:absolute;top:3px;left:3px;width:8px;height:8px;border-radius:50%;}
+  .bag-empty{font-size:13px;color:var(--text-faint);padding:6px 2px;}
+
+  /* ---------- TOOLTIP ---------- */
+  #tip{position:fixed;z-index:66;width:250px;background:linear-gradient(180deg,#3d2c1b,#241a10);
+    border:2px solid var(--wood);border-radius:16px;padding:11px 13px;box-shadow:0 14px 30px rgba(0,0,0,.65);}
+  #tip h4{margin:0;font-size:14.5px;font-weight:800;}
+  #tip .trar{font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;display:inline-block;margin:5px 0 7px;}
+  #tip .tstat{font-size:13.5px;color:var(--text-dim);line-height:1.6;}
+  #tip .trow{display:flex;gap:7px;margin-top:10px;}
+  #tip .trow .btn{flex:1;text-align:center;}
+
+  /* ---------- BATTLE ---------- */
+  #layer-battle{z-index:30;display:flex;flex-direction:column;}
+  .bt-arena{flex:1;display:flex;align-items:center;justify-content:space-around;padding:96px 4vw 0;gap:8px;position:relative;}
+  .bt-side{width:42%;max-width:230px;display:flex;flex-direction:column;align-items:center;gap:7px;}
+  .bt-stage{width:100%;max-width:172px;aspect-ratio:1/1;position:relative;}
+  .bt-stage svg.creature{width:100%;height:100%;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35));}
+  .bt-stage.hit svg.creature{animation:hitf .28s;}
+  @keyframes hitf{0%{filter:brightness(1);}35%{filter:brightness(2.2) saturate(.2);transform:translateX(-4px);}100%{filter:brightness(1);}}
+  .plate{background:linear-gradient(180deg,#fff6e2,#e6d3ac);color:#37281a;font-weight:800;font-size:12.5px;
+    padding:3px 11px;border-radius:10px;box-shadow:0 3px 6px var(--sh);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .bt-hp{width:100%;}
+  .vs{font-family:'Cinzel',serif;font-size:16px;color:#fff;text-shadow:0 2px 5px #000;align-self:center;}
+  .bt-log-wrap{margin:0 10px 12px;background:var(--hud);backdrop-filter:blur(4px);border-radius:16px;padding:10px 14px;
+    box-shadow:0 5px 14px var(--sh),inset 0 1px 0 rgba(255,255,255,.1);}
+  .bt-log-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;}
+  .bt-log-head b{color:var(--gold);font-size:14px;}
+  .bt-log{max-height:15vh;overflow-y:auto;display:flex;flex-direction:column-reverse;font-size:13.5px;color:var(--text-dim);}
+  .bt-log div{padding:2px 0;border-bottom:1px dashed rgba(255,255,255,.08);}
+  .bt-log div:first-child{color:var(--text);}
+  .flee{font-size:12px;padding:6px 11px;border-radius:10px;background:rgba(192,57,43,.22);border:2px solid var(--danger);color:#ffb8b0;font-weight:700;}
+
+  /* ---------- PANELS ---------- */
+  #layer-panel{z-index:45;background:rgba(8,5,2,.6);display:flex;align-items:center;justify-content:center;padding:14px;overflow-y:auto;}
+  .pcard{background:linear-gradient(180deg,var(--panel-2),var(--panel));border:3px solid var(--wood);border-radius:22px;
+    max-width:660px;width:100%;max-height:88vh;overflow-y:auto;padding:18px 16px 22px;position:relative;
+    box-shadow:0 24px 50px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.1);}
+  .pclose{position:absolute;top:12px;right:12px;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.4);
+    border:2px solid var(--wood);color:var(--text);display:flex;align-items:center;justify-content:center;font-size:15px;}
+  .ptitle{font-family:'Cinzel',serif;font-size:19px;color:var(--gold);margin:0 36px 4px 2px;}
+  .psub{font-size:13px;color:var(--text-faint);margin:0 0 14px 2px;}
+  .card{background:rgba(0,0,0,.26);border:2px solid rgba(255,255,255,.08);border-radius:15px;padding:13px;margin-bottom:11px;}
+  .card:last-child{margin-bottom:0;}
+  .card h3{font-family:'Cinzel',serif;font-size:14px;margin:0 0 9px;color:var(--gold);}
+  .muted{color:var(--text-faint);font-size:13.5px;}
+  .btn{font-weight:800;font-size:13px;color:#3a2408;border-radius:11px;padding:9px 13px;
+    background:linear-gradient(180deg,var(--gold),var(--gold-2));box-shadow:0 3px 0 var(--gold-dark),0 4px 8px var(--sh);}
+  .btn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--gold-dark);}
+  .btn:disabled{background:linear-gradient(180deg,#6a6152,#4a4438);box-shadow:0 3px 0 #33301f;color:#9a9284;cursor:not-allowed;}
+  .btn.sec{background:linear-gradient(180deg,#6b4f33,#43301d);color:var(--text);box-shadow:0 3px 0 #2b1d10,0 4px 8px var(--sh);}
+  .btn.dgr{background:linear-gradient(180deg,#e0594a,#a82a1d);color:#fff;box-shadow:0 3px 0 #6e1a11;}
+  .btn.sm{font-size:11.5px;padding:7px 10px;border-radius:9px;}
+  .row{display:flex;gap:8px;align-items:center;}
+  .between{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px;font-size:13.5px;}
+  .grid2 .k{display:block;font-size:11.5px;color:var(--text-faint);}
+  .bar-lg{height:10px;border-radius:6px;background:rgba(0,0,0,.4);overflow:hidden;margin-top:6px;}
+  .bar-lg i{display:block;height:100%;background:var(--exp);}
+  .eq-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(152px,1fr));gap:8px;}
+  .slot{background:rgba(0,0,0,.3);border:2px dashed rgba(255,255,255,.14);border-radius:13px;padding:8px;display:flex;gap:8px;align-items:center;min-height:58px;}
+  .slot.on{border-style:solid;}
+  .sic{width:34px;height:34px;flex:none;border-radius:9px;background:rgba(0,0,0,.32);display:flex;align-items:center;justify-content:center;font-size:17px;}
+  .stx{flex:1;min-width:0;}
+  .stx .n{display:block;font-size:13px;font-weight:700;line-height:1.2;}
+  .stx .s{font-size:11.5px;color:var(--text-faint);}
+  .inv{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:8px;}
+  .item{background:rgba(0,0,0,.3);border:2px solid rgba(255,255,255,.12);border-radius:13px;padding:9px;display:flex;flex-direction:column;gap:6px;}
+  .item .h{display:flex;gap:7px;align-items:center;font-weight:700;font-size:13px;}
+  .ib{width:24px;height:24px;border-radius:7px;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:13px;flex:none;}
+  .tag{font-size:10px;font-weight:800;padding:2px 7px;border-radius:7px;display:inline-block;}
+  .ibody{font-size:12px;color:var(--text-dim);line-height:1.45;}
+  .ach{display:flex;gap:10px;align-items:center;background:rgba(0,0,0,.26);border:1px solid rgba(255,255,255,.1);border-radius:13px;padding:9px 11px;margin-bottom:7px;}
+  .ach:last-child{margin-bottom:0;}
+  .ach.done{border-color:var(--ok);}
+  .achk{width:27px;height:27px;flex:none;border-radius:50%;background:rgba(0,0,0,.3);border:2px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:13px;}
+  .ach.done .achk{background:var(--ok);border-color:#4d7a34;color:#0d1206;}
+  .shoprow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed rgba(255,255,255,.12);}
+  .shoprow:last-child{border-bottom:none;}
+  .bpreview{width:96px;height:96px;flex:none;}
+  .bpreview svg{width:100%;height:100%;}
+
+  /* ---------- STAGE PICKER / LOOT ---------- */
+  .stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(126px,1fr));gap:9px;}
+  .stage{background:rgba(0,0,0,.3);border:2px solid rgba(255,255,255,.12);border-radius:15px;padding:10px 8px;
+    display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center;}
+  .stage.boss{border-color:var(--gold);background:linear-gradient(180deg,rgba(255,206,84,.16),rgba(0,0,0,.3));}
+  .stage.locked{opacity:.45;}
+  .stage .art{width:78px;height:78px;}
+  .stage .art svg{width:100%;height:100%;}
+  .stage .eta{font-size:10.5px;font-weight:800;color:var(--gold);letter-spacing:.5px;text-transform:uppercase;}
+  .stage .nm{font-size:13px;font-weight:700;line-height:1.2;}
+  .stage .lv{font-size:11.5px;color:var(--text-faint);}
+  .stage .btn{width:100%;margin-top:2px;}
+  .loot-row{display:flex;justify-content:space-between;align-items:center;font-size:14.5px;padding:5px 2px;}
+  .loot-row b{color:var(--gold);}
+  .loot-item{display:flex;gap:10px;align-items:center;background:rgba(0,0,0,.32);border-radius:13px;padding:9px 11px;margin-top:10px;text-align:left;border:2px solid var(--wood);}
+  .loot-art{width:74px;height:74px;margin:0 auto;}
+  .stat-line{display:flex;justify-content:space-between;font-size:13.5px;padding:3px 0;border-bottom:1px dashed rgba(255,255,255,.08);}
+  .stat-line:last-child{border-bottom:none;}
+  .stat-line span:last-child{font-weight:700;color:var(--text);}
+  .ach-rw{font-size:11.5px;font-weight:700;color:var(--gold);margin-top:3px;}
+
+  /* ---------- MODALS / TOASTS ---------- */
+  .mbg{position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px;}
+  .modal{background:linear-gradient(180deg,var(--panel-2),var(--panel));border:3px solid var(--wood);border-radius:20px;padding:18px;
+    max-width:340px;width:100%;text-align:center;box-shadow:0 24px 50px rgba(0,0,0,.6);}
+  .modal h3{font-family:'Cinzel',serif;margin:2px 0 8px;color:var(--gold);font-size:17px;}
+  .modal p{font-size:13.5px;color:var(--text-dim);margin:5px 0;}
+  .modal .row{justify-content:center;margin-top:13px;}
+  #toasts{position:fixed;top:8px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;z-index:70;width:min(92vw,420px);pointer-events:none;}
+  .toast{background:linear-gradient(180deg,var(--panel-2),var(--panel));border:2px solid var(--gold-dark);border-radius:13px;padding:9px 13px;font-size:13.5px;
+    box-shadow:0 6px 14px var(--sh);animation:tin .25s ease;}
+  .toast.ach{border-color:var(--rarity-epic);}
+  @keyframes tin{from{opacity:0;transform:translateY(-10px);}to{opacity:1;transform:none;}}
+
+  /* ---------- DAILY QUEST WIDGET ---------- */
+  .quests{position:absolute;right:14px;bottom:124px;width:264px;z-index:41;
+    background:var(--hud);backdrop-filter:blur(4px);border-radius:20px;padding:10px 12px 12px;
+    box-shadow:0 7px 18px var(--sh),inset 0 1px 0 rgba(255,255,255,.1);border:2px solid rgba(255,206,84,.3);}
+  .quests.min{width:auto;padding:8px 11px;}
+  .q-head{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .q-head b{font-size:13.5px;color:var(--gold);}
+  .q-body{margin-top:9px;display:flex;flex-direction:column;gap:7px;}
+  .q-item{background:rgba(0,0,0,.28);border-radius:12px;padding:8px 9px;border:1px solid rgba(255,255,255,.08);}
+  .q-item.done{border-color:var(--ok);}
+  .q-item.claimed{opacity:.5;}
+  .q-top{display:flex;gap:7px;align-items:center;font-size:12.5px;font-weight:700;}
+  .q-top .qi{font-size:15px;}
+  .q-desc{font-size:11.5px;color:var(--text-faint);margin:3px 0 4px;line-height:1.3;}
+  .q-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px;font-size:11px;color:var(--text-dim);}
+  .q-chest{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px;padding-top:9px;
+    border-top:2px solid rgba(255,255,255,.1);font-size:12.5px;}
+  .q-badge{background:var(--danger);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;font-weight:800;}
+
+  /* ---------- DUNGEON MINIGAME ---------- */
+  #layer-dungeon{z-index:35;display:flex;flex-direction:column;align-items:center;gap:10px;
+    padding:12px 12px 16px;background:radial-gradient(circle at 50% 30%,#2b2340,#120d1c 70%);overflow:hidden;}
+  .dg-hud{width:min(640px,100%);display:flex;align-items:center;gap:12px;
+    background:var(--hud);border-radius:16px;padding:9px 13px;box-shadow:0 5px 14px var(--sh);flex:none;}
+  .dg-time{flex:1;min-width:0;} .dg-time b{font-size:16px;color:var(--gold);}
+  .dg-bag{display:flex;gap:9px;font-size:13px;font-weight:800;color:var(--text);white-space:nowrap;}
+  .dg-wrap{width:min(640px,100%);flex:1;min-height:0;display:flex;align-items:center;justify-content:center;}
+  .dg-wrap.hit{animation:dgshake .3s;}
+  @keyframes dgshake{0%,100%{transform:none;}30%{transform:translateX(-6px);}70%{transform:translateX(6px);}}
+  .dg-grid{display:grid;gap:2px;width:100%;max-height:100%;aspect-ratio:15/11;
+    background:#1a1428;border:3px solid #4a3a6e;border-radius:14px;padding:5px;box-shadow:0 10px 26px rgba(0,0,0,.6);}
+  .dg-c{background:#241c38;border-radius:4px;display:flex;align-items:center;justify-content:center;
+    font-size:clamp(9px,2.4vw,17px);line-height:1;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04);}
+  .dg-c.w{background:linear-gradient(180deg,#8f7ac4,#5a4790);border-radius:5px;
+    box-shadow:inset 0 2px 0 rgba(255,255,255,.28),inset 0 -2px 0 rgba(0,0,0,.35);}
+  .dg-p{filter:drop-shadow(0 0 5px #ffce54);} 
+  .dg-g{filter:drop-shadow(0 0 5px #c0392b);}
+  .dg-i{animation:coinbob 1.4s ease-in-out infinite;}
+  .dg-pad{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;}
+  .dg-mid{display:flex;gap:56px;}
+  .dg-b{width:56px;height:46px;border-radius:13px;font-size:18px;color:var(--text);
+    background:linear-gradient(180deg,#45301c,#2a1e13);border:2px solid rgba(255,206,84,.4);}
+  .dg-b:active{transform:translateY(2px);}
+  .dg-tip{flex:none;font-size:11.5px;color:var(--text-faint);text-align:center;max-width:460px;}
+
+  @media (max-width:760px){
+    .quests{right:10px;bottom:auto;top:132px;width:min(62vw,244px);max-height:52vh;overflow-y:auto;}
+    .quests.min{width:auto;}
+    .dock{left:10px;top:auto;bottom:10px;width:min(72vw,250px);max-height:62vh;}
+    .dock.min{width:auto;}
+    .nav-btn{right:10px;bottom:10px;}
+    .res{padding:6px 11px;font-size:14px;}
+  }
+  @media (max-width:430px){
+    .quests{top:auto;bottom:112px;right:8px;width:min(70vw,230px);max-height:44vh;}
+    .dg-b{width:50px;height:42px;} .dg-mid{gap:48px;}
+    .hud-tl{max-width:66vw;padding:7px 12px 7px 7px;gap:9px;}
+    .hud-av{width:50px;height:50px;}
+    .hud-name{font-size:13.5px;}
+    .res{font-size:12px;padding:5px 8px;gap:4px;border-radius:13px;}
+    .res-row{gap:5px;}
+    .coin{width:13px;height:13px;}
+    .ibtn{width:46px;height:46px;font-size:21px;border-radius:15px;}
+    .nav-btn{width:78px;height:78px;font-size:11.5px;}
+    .nav-btn span.ic{font-size:26px;}
+    .cell.eqslot{width:46px;height:46px;}
+    .bag-grid{grid-template-columns:repeat(auto-fill,minmax(42px,1fr));max-height:96px;}
+    .bt-side{width:45%;}
+    #tip{width:220px;}
+  }
+</style>
+
+<div id="toasts"></div>
+<div id="app">
+  <div class="layer" id="layer-castle"></div>
+  <div class="layer" id="layer-world" hidden></div>
+  <div class="layer" id="layer-battle" hidden></div>
+  <div class="layer" id="layer-dungeon" hidden></div>
+  <div class="hud">
+    <div class="hud-tl" id="hud-tl"></div>
+    <div class="hud-tr" id="hud-tr"></div>
+    <div id="hud-quests"></div>
+    <div id="hud-bottom"></div>
+  </div>
+  <div class="layer" id="layer-panel" hidden></div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* =====================================================================
+   1. ISO ENGINE — screen projection, shading, primitives
+===================================================================== */
+const TW = 56, TH = 28, TZ = 26;
+let uidSeq = 1;
+
+function iso(x,y,z){ return [ (x-y)*TW/2, (x+y)*TH/2 - (z||0)*TZ ]; }
+function P(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); }
+function poly(pts, fill, extra){
+  return '<polygon points="'+pts.map(P).join(' ')+'" fill="'+fill+'"'+(extra||'')+'/>';
+}
+function hex2rgb(h){
+  h = h.replace('#','');
+  if(h.length===3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  return [parseInt(h.substr(0,2),16),parseInt(h.substr(2,2),16),parseInt(h.substr(4,2),16)];
+}
+function shade(hex, amt){
+  const c = hex2rgb(hex);
+  const f = amt < 0 ? 0 : 255;
+  const t = Math.abs(amt);
+  const r = Math.round((f - c[0])*t + c[0]), g = Math.round((f - c[1])*t + c[1]), b = Math.round((f - c[2])*t + c[2]);
+  return 'rgb('+r+','+g+','+b+')';
+}
+const TOP=0.10, LEFTF=-0.16, RIGHTF=-0.36;
+
+function isoBox(x,y,z,w,d,h,color){
+  const top   = [iso(x,y,z+h), iso(x+w,y,z+h), iso(x+w,y+d,z+h), iso(x,y+d,z+h)];
+  const left  = [iso(x,y+d,z), iso(x+w,y+d,z), iso(x+w,y+d,z+h), iso(x,y+d,z+h)];
+  const right = [iso(x+w,y,z), iso(x+w,y+d,z), iso(x+w,y+d,z+h), iso(x+w,y,z+h)];
+  return poly(left, shade(color,LEFTF)) + poly(right, shade(color,RIGHTF)) + poly(top, shade(color,TOP));
+}
+function isoPyr(x,y,z,w,d,h,color){
+  const ap = iso(x+w/2, y+d/2, z+h);
+  const a=iso(x,y,z), b=iso(x+w,y,z), c=iso(x+w,y+d,z), e=iso(x,y+d,z);
+  return poly([a,b,ap], shade(color,-0.30)) + poly([a,e,ap], shade(color,-0.30))
+       + poly([b,c,ap], shade(color,RIGHTF)) + poly([e,c,ap], shade(color,TOP));
+}
+/* ridge (gable) roof running along x */
+function isoRoof(x,y,z,w,d,h,color){
+  const r1 = iso(x, y+d/2, z+h), r2 = iso(x+w, y+d/2, z+h);
+  const a=iso(x,y,z), b=iso(x+w,y,z), c=iso(x+w,y+d,z), e=iso(x,y+d,z);
+  return poly([a,b,r2,r1], shade(color,-0.34)) + poly([e,c,r2,r1], shade(color,TOP))
+       + poly([a,e,r1], shade(color,-0.10)) + poly([b,c,r2], shade(color,-0.42));
+}
+function ellPts(cx,cy,rx,ry,a0,a1,n){
+  const out=[];
+  for(let i=0;i<=n;i++){
+    const t = a0 + (a1-a0)*i/n;
+    out.push([cx+rx*Math.cos(t), cy+ry*Math.sin(t)]);
+  }
+  return out;
+}
+function isoCyl(cx,cy,z,r,h,color){
+  const rx = r*TW/2, ry = r*TH/2;
+  const t = iso(cx,cy,z+h), b = iso(cx,cy,z);
+  const body = [[t[0]-rx,t[1]]].concat(ellPts(b[0],b[1],rx,ry,Math.PI,0,14)).concat([[t[0]+rx,t[1]]]);
+  let s = poly(body, shade(color,-0.26));
+  s += '<ellipse cx="'+t[0].toFixed(1)+'" cy="'+t[1].toFixed(1)+'" rx="'+rx.toFixed(1)+'" ry="'+ry.toFixed(1)+'" fill="'+shade(color,TOP)+'"/>';
+  return s;
+}
+function isoCone(cx,cy,z,r,h,color){
+  const rx = r*TW/2, ry = r*TH/2;
+  const b = iso(cx,cy,z), ap = iso(cx,cy,z+h);
+  const pts = [[b[0]-rx,b[1]]].concat(ellPts(b[0],b[1],rx,ry,Math.PI,0,12)).concat([[b[0]+rx,b[1]],ap]);
+  let s = poly(pts, shade(color,-0.18));
+  s += poly([[b[0]-rx,b[1]],ap,[b[0],b[1]+ry]], shade(color,TOP));
+  return s;
+}
+/* flat quad on a constant-y face (front-left wall) */
+function faceY(x0,x1,y,z0,z1,fill){
+  return poly([iso(x0,y,z0),iso(x1,y,z0),iso(x1,y,z1),iso(x0,y,z1)], fill);
+}
+/* flat quad on a constant-x face (front-right wall) */
+function faceX(y0,y1,x,z0,z1,fill){
+  return poly([iso(x,y0,z0),iso(x,y1,z0),iso(x,y1,z1),iso(x,y0,z1)], fill);
+}
+function isoDiamond(x,y,w,d,z,fill,extra){
+  return poly([iso(x,y,z),iso(x+w,y,z),iso(x+w,y+d,z),iso(x,y+d,z)], fill, extra);
+}
+function isoPlatform(x,y,w,d,top,side,depth){
+  depth = depth||1.5;
+  const B=iso(x+w,y,0), C=iso(x+w,y+d,0), D=iso(x,y+d,0);
+  const Bl=iso(x+w,y,-depth), Cl=iso(x+w,y+d,-depth), Dl=iso(x,y+d,-depth);
+  let s = poly([B,C,Cl,Bl], shade(side,-0.34));
+  s += poly([D,C,Cl,Dl], shade(side,-0.12));
+  s += isoDiamond(x,y,w,d,0,top);
+  s += poly([B,C,[C[0],C[1]+7],[B[0],B[1]+7]], shade(top,-0.30));
+  s += poly([D,C,[C[0],C[1]+7],[D[0],D[1]+7]], shade(top,-0.16));
+  return s;
+}
+function label(x,y,z,text,color,size){
+  const p = iso(x,y,z);
+  return '<text x="'+p[0].toFixed(1)+'" y="'+p[1].toFixed(1)+'" text-anchor="middle" font-family="Baloo 2,sans-serif" '+
+    'font-size="'+(size||13)+'" font-weight="800" fill="'+(color||'#fff6e2')+'" stroke="rgba(0,0,0,.55)" stroke-width="3" paint-order="stroke">'+text+'</text>';
+}
+
+/* ---- decorative iso props ---- */
+function propTree(x,y,z,s,dark){
+  s = s||1;
+  const green = dark ? '#3d7038' : '#5aa04a';
+  let o = '<g>';
+  o += '<ellipse cx="'+iso(x,y,z)[0].toFixed(1)+'" cy="'+iso(x,y,z)[1].toFixed(1)+'" rx="'+(16*s)+'" ry="'+(7*s)+'" fill="rgba(0,0,0,.18)"/>';
+  o += isoCyl(x,y,z,0.22*s,0.42*s,'#7a5433');
+  o += isoCone(x,y,z+0.34*s,0.62*s,0.72*s, shade(green,-0.12));
+  o += isoCone(x,y,z+0.72*s,0.48*s,0.66*s, green);
+  o += isoCone(x,y,z+1.06*s,0.32*s,0.56*s, shade(green,0.12));
+  o += '</g>';
+  return o;
+}
+function propRock(x,y,z,s){
+  s=s||1;
+  const c='#9aa0a6';
+  let o='<g>';
+  o += isoBox(x,y,z,0.6*s,0.5*s,0.3*s,c);
+  o += isoBox(x+0.22*s,y+0.12*s,z+0.3*s,0.32*s,0.3*s,0.22*s, shade(c,0.08));
+  o += '</g>';
+  return o;
+}
+function propBush(x,y,z,s){
+  s=s||1;
+  let o='<g>';
+  o += isoCone(x,y,z,0.5*s,0.34*s,'#54913f');
+  o += isoCone(x+0.24*s,y+0.1*s,z,0.38*s,0.3*s,'#69ab4e');
+  o += '</g>';
+  return o;
+}
+function propFlag(x,y,z,h,color){
+  const b=iso(x,y,z), t=iso(x,y,z+h);
+  return '<line x1="'+b[0].toFixed(1)+'" y1="'+b[1].toFixed(1)+'" x2="'+t[0].toFixed(1)+'" y2="'+t[1].toFixed(1)+
+    '" stroke="#5b4326" stroke-width="2.5"/>'+
+    poly([[t[0],t[1]],[t[0]+16,t[1]+5],[t[0],t[1]+12]], color);
+}
+function propBarrel(x,y,z,s){
+  s=s||1;
+  return isoCyl(x,y,z,0.24*s,0.36*s,'#8a5a34');
+}
+function propCrate(x,y,z,s){
+  s=s||1;
+  return isoBox(x,y,z,0.42*s,0.42*s,0.34*s,'#a97a45');
+}
+
+/* =====================================================================
+   2. CREATURE ART — vector SVG with outlines, gradients, faces
+===================================================================== */
+const OUT = 'rgba(28,16,6,.55)';
+function defsGrad(u,p){
+  return '<defs><radialGradient id="'+u+'" cx="34%" cy="26%" r="78%">'+
+    '<stop offset="0%" stop-color="'+(p.light||'#fff')+'"/>'+
+    '<stop offset="55%" stop-color="'+(p.base||'#888')+'"/>'+
+    '<stop offset="100%" stop-color="'+(p.dark||'#333')+'"/></radialGradient></defs>';
+}
+function shadowEll(cx,cy,rx,ry){
+  return '<ellipse cx="'+cx+'" cy="'+cy+'" rx="'+rx+'" ry="'+ry+'" fill="rgba(0,0,0,.2)"/>';
+}
+function eyes(x1,x2,y,p,r){
+  r = r||6;
+  const e = p.eye||'#1b1410';
+  let s='';
+  [x1,x2].forEach(function(x){
+    s += '<ellipse cx="'+x+'" cy="'+y+'" rx="'+r+'" ry="'+(r*1.18).toFixed(1)+'" fill="#fffdf5" stroke="'+OUT+'" stroke-width="1.5"/>';
+    s += '<circle cx="'+(x+0.8)+'" cy="'+(y+1.2)+'" r="'+(r*0.48).toFixed(1)+'" fill="'+e+'"/>';
+    s += '<circle cx="'+(x-1.4)+'" cy="'+(y-1.8)+'" r="1.7" fill="#fff"/>';
+  });
+  return s;
+}
+const CREATURES = {
+  slime:function(p,u){
+    return defsGrad(u,p)+shadowEll(50,92,29,6)+
+    '<path d="M13,86 C9,56 26,28 50,28 C74,28 91,56 87,86 C72,93 28,93 13,86 Z" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2.6" stroke-linejoin="round"/>'+
+    '<ellipse cx="34" cy="48" rx="12" ry="7" fill="#fff" opacity=".38" transform="rotate(-24 34 48)"/>'+
+    eyes(38,62,60,p,6.5)+
+    '<path d="M43,75 Q50,82 57,75" fill="none" stroke="'+OUT+'" stroke-width="2.6" stroke-linecap="round"/>';
+  },
+  wolf:function(p,u){
+    return defsGrad(u,p)+shadowEll(50,92,28,6)+
+    '<path d="M21,42 L24,7 L46,29 Z" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2.4" stroke-linejoin="round"/>'+
+    '<path d="M79,42 L76,7 L54,29 Z" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2.4" stroke-linejoin="round"/>'+
+    '<path d="M27,36 L29,16 L41,30 Z" fill="'+(p.dark)+'" opacity=".8"/>'+
+    '<path d="M73,36 L71,16 L59,30 Z" fill="'+(p.dark)+'" opacity=".8"/>'+
+    '<ellipse cx="50" cy="56" rx="32" ry="28" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2.6"/>'+
+    '<ellipse cx="50" cy="70" rx="17" ry="12" fill="'+shade(p.base,-0.16)+'" stroke="'+OUT+'" stroke-width="2"/>'+
+    '<path d="M44,64 L56,64 L50,71 Z" fill="#231a14"/>'+
+    '<path d="M50,71 L50,76 M50,76 Q45,80 42,76 M50,76 Q55,80 58,76" fill="none" stroke="'+OUT+'" stroke-width="2.2" stroke-linecap="round"/>'+
+    eyes(38,62,50,p,5.5)+
+    '<path d="M29,41 L43,45 M71,41 L57,45" stroke="'+OUT+'" stroke-width="3" stroke-linecap="round"/>';
+  },
+  bat:function(p,u){
+    const wing = '<path d="M38,50 C24,30 9,26 3,39 C11,39 13,45 9,53 C17,51 21,55 19,63 C27,59 33,57 39,61 Z" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2.4" stroke-linejoin="round"/>';
+    return defsGrad(u,p)+shadowEll(50,92,24,5)+
+    wing+'<g transform="translate(100,0) scale(-1,1)">'+wing+'</g>'+
+    '<path d="M41,38 L39,22 L49,33 Z M59,38 L61,22 L51,33 Z" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2"/>'+
+    '<ellipse cx="50" cy="58" rx="17" ry="21" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2.6"/>'+
+    eyes(44,56,53,p,5)+
+    '<path d="M45,68 L47,74 L49,68 Z M51,68 L53,74 L55,68 Z" fill="#fffdf5" stroke="'+OUT+'" stroke-width="1"/>';
+  },
+  spider:function(p,u){
+    let legs='';
+    const L=[[38,60,20,48,10,28],[38,64,18,58,6,46],[38,68,18,70,8,62],[40,72,22,84,14,78]];
+    L.forEach(function(a){
+      legs += '<path d="M'+a[0]+','+a[1]+' C'+a[2]+','+a[3]+' '+a[4]+','+a[5]+' '+(a[4]-2)+','+(a[5]-2)+'" fill="none" stroke="'+p.dark+'" stroke-width="4.5" stroke-linecap="round"/>';
+      legs += '<path d="M'+(100-a[0])+','+a[1]+' C'+(100-a[2])+','+a[3]+' '+(100-a[4])+','+a[5]+' '+(100-a[4]+2)+','+(a[5]-2)+'" fill="none" stroke="'+p.dark+'" stroke-width="4.5" stroke-linecap="round"/>';
+    });
+    return defsGrad(u,p)+shadowEll(50,92,26,6)+legs+
+    '<ellipse cx="50" cy="66" rx="25" ry="21" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2.6"/>'+
+    '<ellipse cx="50" cy="66" rx="13" ry="9" fill="'+shade(p.dark,0.08)+'" opacity=".55"/>'+
+    '<ellipse cx="50" cy="45" rx="16" ry="14" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2.4"/>'+
+    eyes(44,56,43,p,4.2)+
+    '<circle cx="38" cy="49" r="2.6" fill="#fffdf5"/><circle cx="62" cy="49" r="2.6" fill="#fffdf5"/>'+
+    '<path d="M45,56 L44,62 M55,56 L56,62" stroke="'+OUT+'" stroke-width="2.6" stroke-linecap="round"/>';
+  },
+  golem:function(p,u){
+    return defsGrad(u,p)+shadowEll(50,92,28,6)+
+    '<rect x="27" y="70" width="17" height="20" rx="5" fill="'+p.dark+'" stroke="'+OUT+'" stroke-width="2.2"/>'+
+    '<rect x="56" y="70" width="17" height="20" rx="5" fill="'+p.dark+'" stroke="'+OUT+'" stroke-width="2.2"/>'+
+    '<rect x="6" y="36" width="15" height="32" rx="7" fill="'+shade(p.base,-0.18)+'" stroke="'+OUT+'" stroke-width="2.2"/>'+
+    '<rect x="79" y="36" width="15" height="32" rx="7" fill="'+shade(p.base,-0.18)+'" stroke="'+OUT+'" stroke-width="2.2"/>'+
+    '<path d="M22,34 Q22,24 32,24 L68,24 Q78,24 78,34 L78,68 Q78,78 68,78 L32,78 Q22,78 22,68 Z" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2.8"/>'+
+    '<path d="M34,30 L42,14 L48,31 Z" fill="'+shade(p.light,0.12)+'" stroke="'+OUT+'" stroke-width="1.8"/>'+
+    '<path d="M55,31 L62,18 L66,32 Z" fill="'+shade(p.light,0.05)+'" stroke="'+OUT+'" stroke-width="1.8"/>'+
+    '<ellipse cx="50" cy="47" rx="17" ry="8" fill="'+(p.eye||'#fff')+'" opacity=".92"/>'+
+    '<ellipse cx="50" cy="47" rx="22" ry="12" fill="'+(p.eye||'#fff')+'" opacity=".22"/>'+
+    '<path d="M34,60 L44,64 L38,70 M62,58 L56,66" fill="none" stroke="rgba(0,0,0,.3)" stroke-width="2.4" stroke-linecap="round"/>';
+  },
+  ghost:function(p,u){
+    return defsGrad(u,p)+'<ellipse cx="50" cy="93" rx="22" ry="5" fill="rgba(0,0,0,.14)"/>'+
+    '<path d="M20,52 C20,26 33,12 50,12 C67,12 80,26 80,52 L80,84 Q73,75 66,84 Q59,93 52,84 Q45,75 38,84 Q31,93 24,84 Q20,79 20,73 Z" fill="url(#'+u+')" opacity=".93" stroke="'+OUT+'" stroke-width="2.6" stroke-linejoin="round"/>'+
+    '<ellipse cx="39" cy="42" rx="6.5" ry="9" fill="'+(p.eye||'#1b1410')+'"/>'+
+    '<ellipse cx="61" cy="42" rx="6.5" ry="9" fill="'+(p.eye||'#1b1410')+'"/>'+
+    '<ellipse cx="50" cy="62" rx="7" ry="9" fill="'+(p.eye||'#1b1410')+'" opacity=".75"/>'+
+    '<ellipse cx="33" cy="30" rx="9" ry="6" fill="#fff" opacity=".25" transform="rotate(-25 33 30)"/>';
+  },
+  skeleton:function(p,u){
+    return defsGrad(u,p)+shadowEll(50,92,24,5)+
+    '<rect x="46.5" y="52" width="7" height="30" rx="3" fill="'+p.base+'" stroke="'+OUT+'" stroke-width="2"/>'+
+    '<path d="M50,58 Q34,58 31,66 M50,66 Q34,66 31,74 M50,74 Q36,74 33,81" fill="none" stroke="'+p.base+'" stroke-width="5" stroke-linecap="round"/>'+
+    '<path d="M50,58 Q66,58 69,66 M50,66 Q66,66 69,74 M50,74 Q64,74 67,81" fill="none" stroke="'+p.base+'" stroke-width="5" stroke-linecap="round"/>'+
+    '<path d="M28,32 Q28,11 50,11 Q72,11 72,32 Q72,45 64,49 L36,49 Q28,45 28,32 Z" fill="url(#'+u+')" stroke="'+OUT+'" stroke-width="2.6"/>'+
+    '<path d="M37,49 L63,49 L61,58 Q50,64 39,58 Z" fill="'+shade(p.base,-0.1)+'" stroke="'+OUT+'" stroke-width="2"/>'+
+    '<ellipse cx="40" cy="31" rx="7.5" ry="8.5" fill="#1b1410"/><ellipse cx="60" cy="31" rx="7.5" ry="8.5" fill="#1b1410"/>'+
+    '<circle cx="41" cy="30" r="2.4" fill="'+(p.eye==='#14140f'?'#c0392b':(p.eye||'#c0392b'))+'"/>'+
+    '<circle cx="61" cy="30" r="2.4" fill="'+(p.eye==='#14140f'?'#c0392b':(p.eye||'#c0392b'))+'"/>'+
+    '<path d="M47,40 L50,35 L53,40 Z" fill="#1b1410"/>'+
+    '<path d="M43,53 L43,58 M50,53 L50,59 M57,53 L57,58" stroke="'+OUT+'" stroke-width="1.8"/>';
+  },
+  hero:function(p,u){
+    const uid = u+'t';
+    return '<defs><linearGradient id="'+uid+'" x1="0" y1="0" x2="0" y2="1">'+
+      '<stop offset="0%" stop-color="#8fa8d6"/><stop offset="100%" stop-color="#4a5f8e"/></linearGradient>'+
+      '<linearGradient id="'+uid+'s" x1="0" y1="0" x2="1" y2="1">'+
+      '<stop offset="0%" stop-color="#e8eef6"/><stop offset="100%" stop-color="#93a2b5"/></linearGradient></defs>'+
+      shadowEll(50,92,26,6)+
+      '<rect x="36" y="68" width="11" height="22" rx="5" fill="#3c4a6b" stroke="'+OUT+'" stroke-width="2"/>'+
+      '<rect x="53" y="68" width="11" height="22" rx="5" fill="#3c4a6b" stroke="'+OUT+'" stroke-width="2"/>'+
+      '<path d="M31,42 Q31,34 40,33 L60,33 Q69,34 69,42 L72,72 Q50,78 28,72 Z" fill="url(#'+uid+')" stroke="'+OUT+'" stroke-width="2.6" stroke-linejoin="round"/>'+
+      '<rect x="28" y="62" width="44" height="8" rx="4" fill="#e8b23c" stroke="'+OUT+'" stroke-width="2"/>'+
+      '<rect x="46" y="62" width="9" height="8" rx="2" fill="#f4d78a"/>'+
+      '<circle cx="50" cy="25" r="13.5" fill="#f2c99c" stroke="'+OUT+'" stroke-width="2.2"/>'+
+      '<path d="M35,26 Q35,8 50,8 Q65,8 65,26 L65,19 L35,19 Z" fill="url(#'+uid+'s)" stroke="'+OUT+'" stroke-width="2.4"/>'+
+      '<rect x="46.5" y="17" width="7" height="14" rx="3" fill="#8d9cb0" stroke="'+OUT+'" stroke-width="1.6"/>'+
+      '<path d="M50,8 Q58,-1 65,2 Q60,9 52,11 Z" fill="#c0392b" stroke="'+OUT+'" stroke-width="1.8"/>'+
+      '<circle cx="43" cy="26" r="2" fill="#25190f"/><circle cx="57" cy="26" r="2" fill="#25190f"/>'+
+      '<path d="M14,44 Q26,40 26,54 Q26,70 14,72 Q6,64 6,56 Q6,48 14,44 Z" fill="#6f86b5" stroke="'+OUT+'" stroke-width="2.4"/>'+
+      '<path d="M16,49 L16,66 M9,57 L23,57" stroke="#e8b23c" stroke-width="3" stroke-linecap="round"/>'+
+      '<rect x="80" y="22" width="6" height="36" rx="2.5" fill="url(#'+uid+'s)" stroke="'+OUT+'" stroke-width="2"/>'+
+      '<rect x="74" y="56" width="18" height="6" rx="3" fill="#c98a1f" stroke="'+OUT+'" stroke-width="1.8"/>'+
+      '<rect x="80.5" y="61" width="5" height="10" rx="2.5" fill="#7a5433" stroke="'+OUT+'" stroke-width="1.6"/>';
+  },
+};
+function creatureSVG(kind, p, cls){
+  const u = 'c'+(uidSeq++);
+  const fn = CREATURES[kind] || CREATURES.slime;
+  return '<svg class="creature '+(cls||'')+'" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">'+fn(p||{},u)+'</svg>';
+}
+
+/* =====================================================================
+   3. GAME DATA — monsters, zones, loot, achievements
+===================================================================== */
+const MONSTERS = {
+  slime1:{name:'Zielony Szlam', shape:'slime', level:2, kind:'slime', p:{light:'#b8ea96',base:'#6fae5c',dark:'#31552a',eye:'#14140f'}},
+  wolf1:{name:'Polny Wilczek', shape:'wolf', level:3, kind:'wolf', p:{light:'#d6b98c',base:'#9c7a52',dark:'#54402c',eye:'#14140f'}},
+  bat1:{name:'Leśny Nietoperzyk', shape:'bat', level:4, kind:'bat', p:{light:'#b08e74',base:'#7a5c46',dark:'#3a2b1c',eye:'#e8dcc0'}},
+  wolf2:{name:'Cienisty Wilk', shape:'wolf', level:6, kind:'wolf', p:{light:'#9a9aa6',base:'#5a5a63',dark:'#26262c',eye:'#c0392b'}},
+  bat2:{name:'Nocny Nietoperz', shape:'bat', level:7, kind:'bat', p:{light:'#8676a6',base:'#4a3d63',dark:'#1f192c',eye:'#e0a63c'}},
+  spider1:{name:'Leśny Pająk', shape:'spider', level:9, kind:'spider', p:{light:'#9a7854',base:'#5c4630',dark:'#281d11',eye:'#c0392b'}},
+  golem1:{name:'Kryształowy Golem', shape:'golem', level:11, kind:'golem', p:{light:'#a6cef5',base:'#4f8fe0',dark:'#27466d',eye:'#eaf6ff'}},
+  spider2:{name:'Jaskiniowy Pająk', shape:'spider', level:13, kind:'spider', p:{light:'#78787f',base:'#3c3c42',dark:'#18181c',eye:'#4f8fe0'}},
+  bat3:{name:'Ślepy Nietoperz', shape:'bat', level:15, kind:'bat', p:{light:'#cdc6ba',base:'#8c8478',dark:'#443f36',eye:'#e8dcc0'}},
+  slime2:{name:'Fioletowy Szlam', shape:'slime', level:17, kind:'slime', p:{light:'#ddb8f6',base:'#a86fe0',dark:'#54367e',eye:'#14140f'}},
+  hag1:{name:'Bagienna Wiedźma', shape:'ghost', level:19, kind:'hag', p:{light:'#9cb886',base:'#5c7a4a',dark:'#293821',eye:'#e0a63c'}},
+  ghost1:{name:'Błotne Widmo', shape:'ghost', level:21, kind:'ghost', p:{light:'#8dada4',base:'#4a6b63',dark:'#1f2e2a',eye:'#c0392b'}},
+  skeleton1:{name:'Szkielet Wojownik', shape:'skeleton', level:23, kind:'skeleton', p:{light:'#fff8e8',base:'#d8d0bc',dark:'#867e6a',eye:'#c0392b'}},
+  ghost2:{name:'Widmo Krypty', shape:'ghost', level:26, kind:'ghost', p:{light:'#c9d8f2',base:'#8fa8d6',dark:'#455572',eye:'#eaf6ff'}},
+  golem2:{name:'Cieniogolem', shape:'golem', level:29, kind:'golem', p:{light:'#7a68a0',base:'#3c2c52',dark:'#171128',eye:'#c48ef5'}},
+  /* --- Spalone Pustkowia --- */
+  skeleton2:{name:'Spopielony Legionista', shape:'skeleton', level:32, kind:'skeleton', p:{light:'#ffd6a8',base:'#c98a4a',dark:'#6b4220',eye:'#ff7a2c'}},
+  golem3:{name:'Golem Żużlowy', shape:'golem', level:35, kind:'golem', p:{light:'#ff9a5c',base:'#8a3a1e',dark:'#3d1408',eye:'#ffd24a'}},
+  spider3:{name:'Popielna Wdowa', shape:'spider', level:38, kind:'spider', p:{light:'#e8a0a0',base:'#8a3038',dark:'#3a1015',eye:'#ffce54'}},
+  /* --- Lodowe Turnie --- */
+  wolf3:{name:'Zamarły Wilkołak', shape:'wolf', level:42, kind:'wolf', p:{light:'#dff2ff',base:'#7fb6da',dark:'#2f5a6e',eye:'#eaf6ff'}},
+  bat4:{name:'Szroniasty Wampir', shape:'bat', level:45, kind:'bat', p:{light:'#c2e4f5',base:'#5f8fae',dark:'#243f52',eye:'#ffffff'}},
+  golem4:{name:'Lodowy Kolos', shape:'golem', level:48, kind:'golem', p:{light:'#eafaff',base:'#8fd8ef',dark:'#3a7d96',eye:'#ffffff'}},
+  /* --- Otchłań Bez Dna --- */
+  ghost3:{name:'Zjawa Otchłani', shape:'ghost', level:55, kind:'ghost', p:{light:'#d6b8ff',base:'#6f42b0',dark:'#2a1550',eye:'#ffce54'}},
+  slime3:{name:'Pustka w Kształcie Szlamu', shape:'slime', level:58, kind:'slime', p:{light:'#8a8aff',base:'#3a2a7a',dark:'#120a33',eye:'#ff5c8a'}},
+  skeleton3:{name:'Kościany Archont', shape:'skeleton', level:62, kind:'skeleton', p:{light:'#fff0d6',base:'#c9b48a',dark:'#5e5238',eye:'#8a4aff'}},
+  /* --- bossowie --- */
+  boss_polana:{name:'Władca Polany', shape:'wolf', level:6, kind:'wolf', boss:true, p:{light:'#f0a08e',base:'#c0392b',dark:'#631c15',eye:'#ffe9c0'}},
+  boss_las:{name:'Cień Puszczy', shape:'spider', level:12, kind:'spider', boss:true, p:{light:'#7a7a86',base:'#2c2c33',dark:'#101014',eye:'#c48ef5'}},
+  boss_jaskinie:{name:'Rdzeń Kryształu', shape:'golem', level:18, kind:'golem', boss:true, p:{light:'#ffe6a8',base:'#e0a63c',dark:'#82591c',eye:'#fff3cf'}},
+  boss_bagna:{name:'Matka Bagien', shape:'ghost', level:24, kind:'hag', boss:true, p:{light:'#8fb070',base:'#3d5c2e',dark:'#182612',eye:'#e0a63c'}},
+  boss_krypta:{name:'Władca Krypty', shape:'skeleton', level:33, kind:'skeleton', boss:true, p:{light:'#fffdf2',base:'#e8dcc0',dark:'#8a8270',eye:'#4fc3e0'}},
+  boss_pustkowia:{name:'Pożoga', shape:'golem', level:43, kind:'golem', boss:true, p:{light:'#ffe08a',base:'#e05a1a',dark:'#7a2408',eye:'#fff6d0'}},
+  boss_turnie:{name:'Zimowy Monarcha', shape:'skeleton', level:54, kind:'skeleton', boss:true, p:{light:'#f2fbff',base:'#a8dcf0',dark:'#4a7f96',eye:'#4fc3e0'}},
+  boss_otchlan:{name:'Tkacz Otchłani', shape:'spider', level:70, kind:'spider', boss:true, p:{light:'#c8a0ff',base:'#4a1f8a',dark:'#180733',eye:'#ff5c8a'}},
+};
+
+/* islands are placed on the world-map iso grid */
+const ZONES = [
+  {id:'polana', name:'Sosnowa Polana', tier:1, unlockLevel:1, energyCost:5, monsters:['slime1','wolf1','bat1'], boss:'boss_polana',
+   isl:{x:0,y:10,w:4.4,d:4.4}, grass:'#7fc257', dirt:'#a6763f', land:'meadow',
+   dungeon:{name:'Korzenne Lochy', icon:'🌿', tier:1},
+   bg:'linear-gradient(180deg,#a9dff2 0%,#bfe6a8 46%,#6ea84e 100%)'},
+  {id:'las', name:'Mroczny Las', tier:2, unlockLevel:5, energyCost:7, monsters:['wolf2','bat2','spider1'], boss:'boss_las',
+   isl:{x:4.5,y:6.8,w:4.4,d:4.4}, grass:'#4e8a42', dirt:'#7a5630', land:'forest',
+   dungeon:{name:'Gniazdo Pajęczyc', icon:'🕸', tier:2},
+   bg:'linear-gradient(180deg,#93b8a8 0%,#4f7a44 45%,#22351f 100%)'},
+  {id:'jaskinie', name:'Jaskinie Kry', tier:3, unlockLevel:10, energyCost:9, monsters:['golem1','spider2','bat3'], boss:'boss_jaskinie',
+   isl:{x:9.2,y:9.4,w:4.4,d:4.4}, grass:'#8fa2b8', dirt:'#5d6a7d', land:'cave',
+   dungeon:{name:'Kryształowe Sztolnie', icon:'💠', tier:3},
+   bg:'linear-gradient(180deg,#9fb2d4 0%,#5b6f9c 46%,#28324f 100%)'},
+  {id:'bagna', name:'Zapomniane Bagna', tier:4, unlockLevel:16, energyCost:12, monsters:['slime2','hag1','ghost1'], boss:'boss_bagna',
+   isl:{x:10.2,y:3.2,w:4.4,d:4.4}, grass:'#6e7f4c', dirt:'#5a4c2e', land:'swamp',
+   dungeon:{name:'Zatopiona Świątynia', icon:'🐸', tier:4},
+   bg:'linear-gradient(180deg,#94a37e 0%,#5d6b45 48%,#2c3320 100%)'},
+  {id:'krypta', name:'Krypta Cieni', tier:5, unlockLevel:22, energyCost:15, monsters:['skeleton1','ghost2','golem2'], boss:'boss_krypta',
+   isl:{x:4.6,y:-1.2,w:4.6,d:4.6}, grass:'#6b6274', dirt:'#4a4352', land:'crypt',
+   dungeon:{name:'Katakumby Bez Światła', icon:'💀', tier:5},
+   bg:'linear-gradient(180deg,#736a86 0%,#3e3550 52%,#1a1622 100%)'},
+  {id:'pustkowia', name:'Spalone Pustkowia', tier:6, unlockLevel:30, energyCost:18, monsters:['skeleton2','golem3','spider3'], boss:'boss_pustkowia',
+   isl:{x:-1.0,y:-4.6,w:4.6,d:4.6}, grass:'#a05e33', dirt:'#6b3a18', land:'waste',
+   dungeon:{name:'Kuźnia Pożogi', icon:'🔥', tier:6},
+   bg:'linear-gradient(180deg,#e8a86a 0%,#a8542a 46%,#3d1a0a 100%)'},
+  {id:'turnie', name:'Lodowe Turnie', tier:7, unlockLevel:40, energyCost:22, monsters:['wolf3','bat4','golem4'], boss:'boss_turnie',
+   isl:{x:-6.0,y:-1.0,w:4.6,d:4.6}, grass:'#cfe8f2', dirt:'#8fb0c2', land:'ice',
+   dungeon:{name:'Szklana Grota', icon:'❄️', tier:7},
+   bg:'linear-gradient(180deg,#dff2ff 0%,#7fb0cc 46%,#2c4a5e 100%)'},
+  {id:'otchlan', name:'Otchłań Bez Dna', tier:8, unlockLevel:52, energyCost:26, monsters:['ghost3','slime3','skeleton3'], boss:'boss_otchlan',
+   isl:{x:-8.5,y:4.4,w:4.6,d:4.6}, grass:'#3d2a5e', dirt:'#271a3d', land:'void',
+   dungeon:{name:'Serce Otchłani', icon:'🌀', tier:8},
+   bg:'linear-gradient(180deg,#6a4aa0 0%,#33205e 46%,#100722 100%)'},
+];
+const TIERS = ZONES.length;
+
+/* ---------- equipment ---------- */
+function tierRamp(base, k){
+  const a = [];
+  for(let t=1;t<=TIERS;t++) a.push(Math.max(1, Math.round(base*Math.pow(k, t-1))));
+  return a;
+}
+const SLOT_BASE = {
+  weapon:{label:'Broń', icon:'⚔', order:1,
+    names:['Drewniany Kord','Żelazny Miecz','Kryształowe Ostrze','Bagienny Sierp','Kosa Cieni','Ostrze Pożogi','Lodowy Brzeszczot','Kieł Otchłani'],
+    atk:tierRamp(5,1.56), crit:tierRamp(1,1.3), spd:tierRamp(2,1.24)},
+  armor:{label:'Zbroja', icon:'🥋', order:2,
+    names:['Skórzana Kurta','Kolczuga','Kryształowa Zbroja','Pancerz Bagnisk','Zbroja Cienia','Płyta Żużlowa','Turniowy Napierśnik','Pancerz Pustki'],
+    def:tierRamp(3,1.48), hp:tierRamp(6,1.5), dodge:tierRamp(1,1.26)},
+  shield:{label:'Tarcza', icon:'🛡', order:3,
+    names:['Deska Wieśniaka','Żelazna Puklerz','Kryształowa Egida','Pokrywa Bagien','Wrota Krypty','Tarcza Żaru','Lodowa Bariera','Krąg Otchłani'],
+    def:tierRamp(4,1.46), hp:tierRamp(4,1.46), block:tierRamp(2,1.24)},
+  helm:{label:'Hełm', icon:'⛑', order:4,
+    names:['Kapturek Wędrowca','Żelazny Hełm','Kryształowy Diadem','Maska Wiedźmy','Korona Cieni','Przyłbica Pożogi','Szroniasty Szyszak','Diadem Otchłani'],
+    def:tierRamp(2,1.48), hp:tierRamp(5,1.46), stun:tierRamp(1,1.26)},
+  gloves:{label:'Rękawice', icon:'🧤', order:5,
+    names:['Płócienne Owijki','Karwasze','Kryształowe Szpony','Błotne Rękawice','Chwyt Cienia','Rękawice Kowala','Mroźny Uścisk','Dłonie Pustki'],
+    atk:tierRamp(2,1.5), crit:tierRamp(1,1.32), spd:tierRamp(1,1.3)},
+  boots:{label:'Buty', icon:'🥾', order:6,
+    names:['Łapcie','Skórzane Buty','Kryształowe Sandały','Bagienne Brodziki','Kroki Cienia','Buty Żarowe','Raki Turniowe','Stopy Otchłani'],
+    dodge:tierRamp(1,1.32), spd:tierRamp(2,1.28), def:tierRamp(1,1.46)},
+  ring:{label:'Pierścień', icon:'💍', order:7,
+    names:['Miedziany Pierścień','Sygnet Rycerza','Kryształowa Obrączka','Pierścień Wiedźmy','Pierścień Nekromanty','Obrączka Żaru','Lodowy Krąg','Pierścień Pustki'],
+    atk:tierRamp(2,1.52), crit:tierRamp(1,1.34), critpow:tierRamp(6,1.32)},
+  amulet:{label:'Naszyjnik', icon:'📿', order:8,
+    names:['Sznur Muszelek','Amulet Podróżnika','Kryształowy Wisior','Bagienny Talizman','Naszyjnik Dusz','Medalion Pożogi','Szroniasty Wisior','Serce Otchłani'],
+    hp:tierRamp(5,1.46), bonus:tierRamp(3,1.26), critpow:tierRamp(5,1.28)},
+};
+const SLOT_KEYS = ['weapon','armor','shield','helm','gloves','boots','ring','amulet'];
+const STAT_KEYS = ['atk','def','hp','bonus','crit','spd','dodge','stun','critpow','block'];
+const STAT_META = {
+  atk:{ic:'⚔', name:'Atak', suf:''}, def:{ic:'🛡', name:'Obrona', suf:''},
+  hp:{ic:'❤', name:'Życie', suf:''}, bonus:{ic:'✦', name:'Zdobycze', suf:'%'},
+  crit:{ic:'🎯', name:'Krytyk', suf:'%'}, critpow:{ic:'💥', name:'Moc kryt.', suf:'%'},
+  dodge:{ic:'🌀', name:'Unik', suf:'%'}, stun:{ic:'⭐', name:'Ogłuszenie', suf:'%'},
+  spd:{ic:'⚡', name:'Szybkość', suf:'%'}, block:{ic:'🧱', name:'Blok', suf:'%'},
+};
+
+/* ---------- item artwork ---------- */
+const TIER_MAT = [
+  {m:'#c79a5e', d:'#8a6436', a:'#ebcf9c', g:'#d9734a'},
+  {m:'#cbd2dc', d:'#7f8996', a:'#f0f4f9', g:'#5b9fe8'},
+  {m:'#84dcf2', d:'#3c8ab0', a:'#d6f5ff', g:'#4fd0e0'},
+  {m:'#a9d673', d:'#587f3a', a:'#dbf2b6', g:'#b7e05a'},
+  {m:'#b78cf2', d:'#5c3d94', a:'#e4d2ff', g:'#e0a63c'},
+  {m:'#f09a5a', d:'#a8481c', a:'#ffd9b0', g:'#ffce54'},
+  {m:'#d8f0fa', d:'#6f9fb8', a:'#ffffff', g:'#7fe0ff'},
+  {m:'#7a5ac0', d:'#2e1a5e', a:'#c8b0ff', g:'#ff5c8a'},
+];
+function itemIcon(it, px){
+  const t = TIER_MAT[(it.tier||1)-1] || TIER_MAT[0], k = it.tier||1;
+  const st = ' stroke="#241a10" stroke-width="1.5" stroke-linejoin="round"';
+  let g = '';
+  if(it.slot==='weapon'){
+    const blade = k<=2 ? 'M16,2 L20.5,10 L20.5,21 L11.5,21 L11.5,10 Z'
+      : k<=4 ? 'M16,1.5 L21.5,11 L19,21 L13,21 L10.5,11 Z'
+      : 'M9,21 C9,10 16,3 24,3 C18,7 15,13 14.5,21 Z';
+    g = '<path d="'+blade+'" fill="'+t.m+'"'+st+'/>'+
+        '<path d="M16,4 L16,20" stroke="'+t.a+'" stroke-width="1.6" opacity=".8"/>'+
+        '<rect x="8.5" y="20.5" width="15" height="3.4" rx="1.6" fill="#8a5a34"'+st+'/>'+
+        '<rect x="14.4" y="23.5" width="3.2" height="6" rx="1.4" fill="#6b4a2a"'+st+'/>'+
+        (k>=4?'<circle cx="16" cy="26.5" r="2.1" fill="'+t.g+'"'+st+'/>':'');
+  } else if(it.slot==='armor'){
+    g = '<path d="M8,7 L13,4.5 L16,7 L19,4.5 L24,7 L23,20 Q16,28 9,20 Z" fill="'+t.m+'"'+st+'/>'+
+        '<path d="M16,7 L16,24" stroke="'+t.d+'" stroke-width="1.6"/>'+
+        '<path d="M9.5,11 L22.5,11" stroke="'+t.a+'" stroke-width="1.5" opacity=".75"/>'+
+        (k>=3?'<circle cx="16" cy="14.5" r="2.6" fill="'+t.g+'"'+st+'/>':'');
+  } else if(it.slot==='shield'){
+    g = '<path d="M16,3 L26,7 Q26,21 16,28 Q6,21 6,7 Z" fill="'+t.m+'"'+st+'/>'+
+        '<path d="M16,6.5 L23,9.3 Q23,19.5 16,24.5 Q9,19.5 9,9.3 Z" fill="'+t.d+'" opacity=".55"/>'+
+        '<path d="M16,8 L16,22 M10,13 L22,13" stroke="'+t.a+'" stroke-width="1.8" stroke-linecap="round"/>'+
+        (k>=4?'<circle cx="16" cy="13" r="2.4" fill="'+t.g+'"'+st+'/>':'');
+  } else if(it.slot==='helm'){
+    g = '<path d="M7,19 Q7,5 16,5 Q25,5 25,19 L25,23 L7,23 Z" fill="'+t.m+'"'+st+'/>'+
+        '<rect x="7" y="15.5" width="18" height="4.5" fill="'+t.d+'"'+st+'/>'+
+        '<rect x="14.5" y="9" width="3" height="11" rx="1.4" fill="'+t.a+'"'+st+'/>'+
+        (k>=4?'<path d="M16,5 Q20,0 24,2 Q21,5 17,6 Z" fill="'+t.g+'"'+st+'/>':'');
+  } else if(it.slot==='gloves'){
+    g = '<path d="M9,14 L9,8 Q9,6 11,6 Q13,6 13,8 L13,13 L14,5.5 Q14.3,3.5 16.3,3.8 Q18.2,4.1 17.9,6 L17,13.5 L18.6,7.5 Q19.1,5.6 21,6.1 Q22.8,6.6 22.3,8.5 L21,17 Q20,24 15,26 Q9.5,27 8,21 L6.5,16 Q6,14 7.6,13.4 Q9,12.9 9,14 Z" fill="'+t.m+'"'+st+'/>'+
+        '<path d="M9,19 Q15,22 20,19" stroke="'+t.d+'" stroke-width="1.8" fill="none"/>'+
+        (k>=4?'<circle cx="14.5" cy="22" r="2.2" fill="'+t.g+'"'+st+'/>':'');
+  } else if(it.slot==='boots'){
+    g = '<path d="M11,4 L18,4 L18,17 L25,21 Q27,22.5 26,25.5 L9,25.5 Q7,25.5 7,23 L7,4 Z" fill="'+t.m+'"'+st+'/>'+
+        '<path d="M7,21.5 L26,23.5" stroke="'+t.d+'" stroke-width="2"/>'+
+        '<path d="M8.5,9 L17,9 M8.5,13 L17,13" stroke="'+t.a+'" stroke-width="1.5" opacity=".8"/>'+
+        (k>=4?'<path d="M19,6 L23,10 L19,14 Z" fill="'+t.g+'"'+st+'/>':'');
+  } else if(it.slot==='ring'){
+    g = '<circle cx="16" cy="19" r="8.5" fill="none" stroke="'+t.m+'" stroke-width="4"/>'+
+        '<circle cx="16" cy="19" r="8.5" fill="none" stroke="#241a10" stroke-width="1.2"/>'+
+        '<path d="M16,4 L20,9 L16,14 L12,9 Z" fill="'+t.g+'"'+st+'/>'+
+        '<path d="M16,5.5 L18.4,9 L16,12.5 Z" fill="'+t.a+'" opacity=".8"/>';
+  } else {
+    g = '<path d="M7,6 Q16,20 25,6" fill="none" stroke="'+t.m+'" stroke-width="3" stroke-linecap="round"/>'+
+        '<path d="M7,6 Q16,20 25,6" fill="none" stroke="#241a10" stroke-width="1" opacity=".6"/>'+
+        '<circle cx="16" cy="21" r="6" fill="'+t.g+'"'+st+'/>'+
+        '<circle cx="14" cy="19" r="2" fill="'+t.a+'" opacity=".85"/>';
+  }
+  return '<svg viewBox="0 0 32 32" width="'+(px||30)+'" height="'+(px||30)+'" xmlns="http://www.w3.org/2000/svg">'+g+'</svg>';
+}
+const RARITIES = [
+  {id:'common', label:'Pospolity', mult:1, color:'var(--rarity-common)', w:52, wb:14},
+  {id:'uncommon', label:'Niezwykły', mult:1.32, color:'var(--rarity-uncommon)', w:29, wb:30},
+  {id:'rare', label:'Rzadki', mult:1.72, color:'var(--rarity-rare)', w:14, wb:32},
+  {id:'epic', label:'Epicki', mult:2.25, color:'var(--rarity-epic)', w:4.2, wb:17},
+  {id:'legendary', label:'Legendarny', mult:3.05, color:'var(--rarity-legendary)', w:0.8, wb:7},
+  {id:'artifact', label:'Artefakt', mult:4.3, color:'#ff8a3c', w:0, wb:0},
+];
+/* unique artifacts — wypadają WYŁĄCZNIE z Wędrownego Herosa (5%) */
+const ARTIFACTS = {
+  a_fang:{slot:'weapon', name:'Kieł Władcy Polany', flavor:'Wyrwany zwierzowi, który rządził tą łąką.', extra:{crit:4, spd:5}},
+  a_eye:{slot:'ring', name:'Oko Puszczy', flavor:'Wciąż mruga, gdy nikt nie patrzy.', extra:{bonus:10, critpow:18}},
+  a_heart:{slot:'armor', name:'Serce Kryształu', flavor:'Bije wolno, lodowatym rytmem.', extra:{dodge:5, hp:30}},
+  a_crown:{slot:'helm', name:'Korona Matki Bagien', flavor:'Oplata głowę korzeniami i szeptem.', extra:{stun:6, def:8}},
+  a_scythe:{slot:'weapon', name:'Kosa Wiecznej Nocy', flavor:'Tnie także to, czego nie widać.', extra:{crit:8, critpow:30}},
+  a_aegis:{slot:'shield', name:'Egida Pożogi', flavor:'Żar, który zapomniał, jak gasnąć.', extra:{block:8, def:12}},
+  a_grip:{slot:'gloves', name:'Uścisk Monarchy', flavor:'Ręce marzną, zanim zdążysz krzyknąć.', extra:{crit:6, spd:8}},
+  a_step:{slot:'boots', name:'Kroki Otchłani', flavor:'Zostawiają ślady tam, gdzie nie ma podłoża.', extra:{dodge:7, spd:9}},
+  a_bead:{slot:'amulet', name:'Różaniec Tkacza', flavor:'Każdy paciorek to czyjeś ostatnie tchnienie.', extra:{bonus:14, hp:40}},
+};
+const ARTIFACT_KEYS = Object.keys(ARTIFACTS);
+
+/* =====================================================================
+   3b. RELIKTY — pasywne zdolności bohatera, ulepszane odłamkami z lochów
+===================================================================== */
+const RELIC_MAX = 10;
+const RELICS = [
+  {id:'fury',    name:'Kamień Furii',      icon:'🔥', color:'#ff7a3c',
+   desc:l=>'+'+(l*4)+'% zadawanych obrażeń'},
+  {id:'aegis',   name:'Tarcza Praojców',   icon:'🧱', color:'#8fc0f0',
+   desc:l=>'-'+(l*2.2).toFixed(1)+'% otrzymywanych obrażeń'},
+  {id:'vampire', name:'Pieczęć Wampira',   icon:'🩸', color:'#e05a6a',
+   desc:l=>'Wysysasz '+(l*2.5).toFixed(1)+'% zadanych obrażeń jako życie'},
+  {id:'storm',   name:'Runa Burzy',        icon:'⚡', color:'#7fe0ff',
+   desc:l=>'+'+(l*3)+'% szansy na dodatkowy cios'},
+  {id:'phoenix', name:'Łza Feniksa',       icon:'🪶', color:'#ffce54',
+   desc:l=>'Raz na walkę wstajesz z '+(10+l*4)+'% życia'},
+  {id:'hunter',  name:'Znak Łowcy',        icon:'🎯', color:'#b7e05a',
+   desc:l=>'+'+(l*2)+'% krytyka i +'+(l*6)+'% mocy krytyka'},
+  {id:'greed',   name:'Oko Chciwości',     icon:'👁', color:'#ffe08a',
+   desc:l=>'+'+(l*6)+'% złota oraz +'+(l*2)+'% szansy na łup'},
+  {id:'titan',   name:'Serce Tytana',      icon:'💚', color:'#7dbb5a',
+   desc:l=>'+'+(l*28)+' maks. życia i +'+(l*2)+' obrony'},
+];
+function relicDef(id){ return RELICS.find(r=>r.id===id); }
+function relicCost(lvl){ return Math.round(10*Math.pow(1.45, lvl)); }
+function relicSlotCount(){ return Math.min(3, 1 + Math.floor(state.level/18)); }
+
+/* =====================================================================
+   3c. ZADANIA DZIENNE
+===================================================================== */
+const DAILY_POOL = [
+  {id:'build',  icon:'🏗',  name:'Rozbuduj posiadłość', target:1,  desc:t=>'Wybuduj lub ulepsz dowolny budynek ('+t+')'},
+  {id:'gold',   icon:'🪙',  name:'Zbierz złoto',        target:450, desc:t=>'Zdobądź '+t+' złota'},
+  {id:'forge',  icon:'⚒️',  name:'Ulepsz broń',         target:1,  desc:t=>'Ulepsz przedmiot w Kuźni ('+t+'×)'},
+  {id:'kill',   icon:'⚔️',  name:'Oczyść okolicę',      target:8,  desc:t=>'Pokonaj '+t+' potworów'},
+  {id:'res',    icon:'🪵',  name:'Zwieź surowce',       target:70, desc:t=>'Zbierz '+t+' drewna i kamienia'},
+  {id:'boss',   icon:'👑',  name:'Zetnij bossa',        target:1,  desc:t=>'Pokonaj '+t+' bossa krainy'},
+  {id:'sell',   icon:'💰',  name:'Opróżnij plecak',     target:4,  desc:t=>'Sprzedaj '+t+' przedmioty'},
+  {id:'energy', icon:'⚡',  name:'Ruszaj w drogę',      target:45, desc:t=>'Wydaj '+t+' energii na wyprawy'},
+  {id:'node',   icon:'⛏️',  name:'Doglądaj złóż',       target:1,  desc:t=>'Odbierz urobek ze złoża lub kopalni ('+t+'×)'},
+];
+const DAILY_COUNT = 3;
+
+/* =====================================================================
+   3d. OSIĄGNIĘCIA — wielopoziomowe
+===================================================================== */
+function achReward(tier){
+  return {gold: Math.round(70*Math.pow(tier,1.7)), gems: tier, exp: Math.round(45*Math.pow(tier,1.6))};
+}
+const ACHIEVEMENTS = [
+  {id:'kills', icon:'⚔️', name:'Pogromca', desc:t=>'Pokonaj łącznie '+t+' potworów.',
+   tiers:[1,25,100,300,1000,3000], get:s=>s.stats.totalKills},
+  {id:'builder', icon:'🏰', name:'Budowniczy', desc:t=>'Wybuduj '+t+' budynków w posiadłości.',
+   tiers:[2,5,8,11,13], get:s=>builtCount(s)},
+  {id:'level', icon:'⭐', name:'Wschodząca Gwiazda', desc:t=>'Osiągnij poziom '+t+'.',
+   tiers:[5,10,20,30,45,60], get:s=>s.level},
+  {id:'gold', icon:'🪙', name:'Bogacz', desc:t=>'Zgromadź łącznie '+t+' złota.',
+   tiers:[1000,10000,50000,250000,1000000], get:s=>s.stats.lifetimeGold},
+  {id:'smith', icon:'⚒️', name:'Uczeń Kowala', desc:t=>'Ulepsz przedmioty w kuźni '+t+' razy.',
+   tiers:[5,20,60,150,400], get:s=>s.stats.upgrades||0},
+  {id:'gear', icon:'🎽', name:'Pełny Rynsztunek', desc:t=>'Miej założone '+t+' przedmiotów naraz.',
+   tiers:[4,6,8], get:s=>SLOT_KEYS.filter(k=>s.equipment[k]).length},
+  {id:'rarity', icon:'💎', name:'Kolekcjoner', desc:t=>'Zdobądź przedmiot o randze '+(RARITIES[t-1]?RARITIES[t-1].label.toLowerCase():t)+'.',
+   tiers:[3,4,5,6], get:s=>s.stats.bestRarityRank},
+  {id:'zones', icon:'🗺️', name:'Odkrywca', desc:t=>'Odblokuj '+t+' krain.',
+   tiers:[3,5,7,8], get:s=>ZONES.filter(z=>s.level>=z.unlockLevel).length},
+  {id:'boss', icon:'👑', name:'Kat Władców', desc:t=>'Pokonaj bossów '+t+' razy.',
+   tiers:[1,10,30,80,200], get:s=>s.stats.bossesKilled},
+  {id:'slime', icon:'🟢', name:'Łowca Szlamu', desc:t=>'Zabij '+t+' szlamów.',
+   tiers:[10,30,80,200], get:s=>s.stats.kills.slime||0},
+  {id:'wolf', icon:'🐺', name:'Pogromca Wilków', desc:t=>'Zabij '+t+' wilków.',
+   tiers:[10,30,80,200], get:s=>s.stats.kills.wolf||0},
+  {id:'bat', icon:'🦇', name:'Postrach Nietoperzy', desc:t=>'Zabij '+t+' nietoperzy.',
+   tiers:[10,30,80,200], get:s=>s.stats.kills.bat||0},
+  {id:'spider', icon:'🕷️', name:'Pajęcza Zmora', desc:t=>'Zabij '+t+' pająków.',
+   tiers:[10,30,80,200], get:s=>s.stats.kills.spider||0},
+  {id:'golem', icon:'🗿', name:'Niszczyciel Golemów', desc:t=>'Zabij '+t+' golemów.',
+   tiers:[8,25,70,180], get:s=>s.stats.kills.golem||0},
+  {id:'undead', icon:'💀', name:'Kościany Kat', desc:t=>'Zabij '+t+' szkieletów i widm.',
+   tiers:[10,30,80,200], get:s=>(s.stats.kills.skeleton||0)+(s.stats.kills.ghost||0)+(s.stats.kills.hag||0)},
+  {id:'daily', icon:'📜', name:'Sumienny', desc:t=>'Wykonaj '+t+' zadań dziennych.',
+   tiers:[3,15,50,150,400], get:s=>s.stats.dailyDone||0},
+  {id:'dungeon', icon:'🗝️', name:'Grabieżca Lochów', desc:t=>'Ukończ '+t+' wypraw do lochów.',
+   tiers:[1,5,20,60,150], get:s=>s.stats.dungeonRuns||0},
+  {id:'relic', icon:'🔮', name:'Strażnik Reliktów', desc:t=>'Zbierz łącznie '+t+' poziomów reliktów.',
+   tiers:[1,6,18,40,70], get:s=>relicTotalLevels(s)},
+  {id:'hero', icon:'🦸', name:'Łowca Herosów', desc:t=>'Pokonaj Wędrownego Herosa '+t+' razy.',
+   tiers:[1,5,15,40,100], get:s=>s.stats.heroesKilled||0},
+];
+function achLevel(id){ return (state.achLvl && state.achLvl[id]) || 0; }
+function achTarget(a, lvl){ return a.tiers[Math.min(lvl, a.tiers.length-1)]; }
+function relicTotalLevels(s){
+  let n = 0; const r = s.relics||{};
+  Object.keys(r).forEach(k=>{ n += r[k]||0; });
+  return n;
+}
+
+/* =====================================================================
+   4. ESTATE — buildings, costs, effects, iso models
+===================================================================== */
+function bcost(id, lvl){ return Math.round(BUILDINGS[id].base * Math.pow(1.75, lvl-1)); }
+function mineRate(lvl){ return Math.round(22*Math.pow(lvl,1.3)); }
+function mineCap(lvl){ return mineRate(lvl)*8; }
+function wellRegen(lvl){ return Math.max(7, Math.round((20 - lvl*1.3)*10)/10); }
+
+const BUILDINGS = {
+  keep:{ name:'Zamek', icon:'🏰', base:250, max:15,
+    desc:'Serce posiadłości. Wyznacza maksymalny poziom pozostałych budynków.',
+    effect:l=>'+'+(l*5)+' maks. energii • limit budynków: poz. '+l },
+  mine:{ name:'Kopalnia Złota', icon:'⛏️', base:100, max:15,
+    desc:'Wydobywa złoto także wtedy, gdy nie grasz. Odbierz urobek, zanim magazyn się zapełni.',
+    effect:l=>mineRate(l)+' złota/h • magazyn '+mineCap(l) },
+  forge:{ name:'Kuźnia', icon:'⚒️', base:180, max:15,
+    desc:'Ulepsza założone przedmioty. Każdy poziom ulepszenia to +8% statystyk przedmiotu.',
+    effect:l=>'maks. ulepszenie przedmiotu: +'+l },
+  market:{ name:'Sklep Eventowy', icon:'💎', base:260, max:10,
+    desc:'Handluje za kryształy zdobywane na bossach i w wydarzeniach.',
+    effect:l=>l>=3?'pełna oferta ze skrzynią legendarną':(l>=2?'oferta ze skrzynią epicką':'oferta podstawowa') },
+  well:{ name:'Studnia Mocy', icon:'⛲', base:150, max:12,
+    desc:'Magiczna woda przyspiesza regenerację energii wyprawowej.',
+    effect:l=>'1 energii co '+wellRegen(l)+' s' },
+  barracks:{ name:'Koszary', icon:'🛡️', base:220, max:15,
+    desc:'Trenujesz tu drużynę — stały bonus do ataku i obrony bohatera.',
+    effect:l=>'+'+(l*3)+' ataku, +'+(l*2)+' obrony' },
+  watch:{ name:'Strażnica', icon:'🗼', base:200, max:12,
+    desc:'Zwiadowcy wyznaczają krótsze trasy — wyprawy kosztują mniej energii.',
+    effect:l=>'-'+Math.floor(l/2)+' energii na wyprawę (min. połowa kosztu)' },
+  store:{ name:'Magazyn', icon:'📦', base:130, max:12,
+    desc:'Dodatkowe półki i skrzynie — więcej miejsca w plecaku.',
+    effect:l=>'pojemność plecaka: '+(50+l*10) },
+  bazaar:{ name:'Targowisko', icon:'🪙', base:170, max:12,
+    desc:'Kupcy płacą lepiej za łup przyniesiony z wypraw.',
+    effect:l=>'+'+(l*8)+'% do ceny sprzedaży' },
+  shrine:{ name:'Kapliczka', icon:'✨', base:240, max:12,
+    desc:'Błogosławieństwo przyspiesza naukę bohatera.',
+    effect:l=>'+'+(l*4)+'% doświadczenia z walk' },
+};
+BUILDINGS.sawmill = { name:'Tartak', icon:'🪓', base:120, max:12,
+  desc:'Skromna produkcja drewna i kamienia na miejscu. Prawdziwe złoża znajdziesz w świecie.',
+  effect:l=>sawRate(l,'wood')+' drewna/h • '+sawRate(l,'stone')+' kamienia/h' };
+
+const RES = {
+  gold:{name:'Złoto', icon:'🪙', color:'#ffce54',
+    desc:'Podstawowa waluta. Zdobywasz ją w walkach i w Kopalni Złota; płacisz nią za budowę i ulepszenia.'},
+  wood:{name:'Drewno', icon:'🪵', color:'#c08b4a',
+    desc:'Surowiec budowlany. Produkuje je Tartak w posiadłości, a najwięcej daje Leśny Tartak w świecie.'},
+  stone:{name:'Kamień', icon:'🪨', color:'#b9bcc2',
+    desc:'Surowiec budowlany. Skromnie z Tartaku, obficie z Kamieniołomu strzeżonego przez strażnika.'},
+  gems:{name:'Kryształy', icon:'💎', color:'#8fe0ff',
+    desc:'Waluta wydarzeń. Zostawiają je bossowie i osiągnięcia; wydasz ją w Sklepie Eventowym.'},
+  energy:{name:'Energia', icon:'⚡', color:'#4fc3e0',
+    desc:'Koszt każdej wyprawy. Odnawia się sama w czasie — Studnia Mocy przyspiesza regenerację.'},
+  shard:{name:'Odłamki Reliktów', icon:'🔮', color:'#c48ef5',
+    desc:'Zbierasz je w lochach. Służą wyłącznie do ulepszania reliktów.'},
+  keys:{name:'Klucze do Lochów', icon:'🗝️', color:'#ffce54',
+    desc:'Otwierają wrota lochów. Wypadają ze skrzyń za zadania dzienne.'},
+};
+function resTip(res){ return 'data-tip="res:'+res+'"'; }
+function resTag(res, amount, redIf){
+  const r = RES[res];
+  return '<span '+resTip(res)+(redIf?' style="color:#e0524a"':'')+'>'+amount+' '+r.icon+'</span>';
+}
+function sawRate(l, res){ return l>0 ? Math.max(1, Math.round((res==='wood'?4:3)*Math.pow(l,1.2))) : 0; }
+function sawCap(l){ return Math.max(20, sawRate(l,'wood')*8); }
+
+/* world resource nodes — unlocked and levelled by defeating their guardian */
+const NODES = [
+  {id:'lumber', name:'Leśny Tartak', res:'wood', icon:'🪵', base:9, grass:'#5f9042',
+   guardName:'Strażnik Boru', shapes:['wolf','spider','bat','ghost'], isl:{x:-3.6,y:9.4,w:3.2,d:3.2}, near:'polana'},
+  {id:'quarry', name:'Kamieniołom', res:'stone', icon:'🪨', base:7, grass:'#97a0a8',
+   guardName:'Strażnik Skał', shapes:['golem','skeleton','slime','spider'], isl:{x:5.6,y:13.6,w:3.2,d:3.2}, near:'polana'},
+];
+function nodeState(id){
+  if(!state.nodes) state.nodes = {};
+  if(!state.nodes[id]) state.nodes[id] = {lvl:0, at:Date.now()};
+  return state.nodes[id];
+}
+function nodeRate(nd, lvl){ return lvl>0 ? Math.round(nd.base*Math.pow(lvl,1.25)) : 0; }
+function nodeCap(nd, lvl){ return nodeRate(nd,lvl)*8; }
+function guardLevel(lvl){ return 2 + lvl*3; }
+function guardCost(lvl){ return 6 + lvl*2; }
+function guardianOf(nd, lvl){
+  const pals = [MONSTERS.wolf1.p, MONSTERS.golem1.p, MONSTERS.spider2.p, MONSTERS.slime2.p, MONSTERS.ghost2.p, MONSTERS.boss_krypta.p];
+  return {name:nd.guardName+' '+toRoman(lvl+1), shape:nd.shapes[lvl % nd.shapes.length], kind:'guard',
+    level:guardLevel(lvl), boss:((lvl+1) % 3 === 0), p:pals[lvl % pals.length]};
+}
+function toRoman(n){ return ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'][n-1] || String(n); }
+
+const SOON = {
+  tower:{ name:'Wieża Magów', icon:'🔮', desc:'Minigra alchemiczna: warzenie mikstur i ulepszeń z run.' },
+  arena:{ name:'Arena', icon:'⚔️', desc:'Pojedynki rankingowe i sezonowe nagrody.' },
+};
+const LAND = 15.2;
+const PLOTS = [
+  {id:'keep',     x:6.3,  y:6.3,  s:2.7},
+  {id:'mine',     x:0.8,  y:0.8,  s:2.0},
+  {id:'well',     x:3.8,  y:0.6,  s:2.0},
+  {id:'forge',    x:9.6,  y:0.7,  s:2.0},
+  {id:'watch',    x:12.5, y:1.0,  s:2.0},
+  {id:'store',    x:0.6,  y:3.9,  s:2.0},
+  {id:'barracks', x:12.6, y:4.0,  s:2.0},
+  {id:'market',   x:0.8,  y:9.8,  s:2.0},
+  {id:'bazaar',   x:12.4, y:9.6,  s:2.0},
+  {id:'shrine',   x:3.7,  y:12.5, s:2.0},
+  {id:'tower',    x:9.8,  y:12.6, s:2.0, soon:true},
+  {id:'arena',    x:0.9,  y:12.8, s:2.0, soon:true},
+  {id:'sawmill',  x:12.7, y:12.7, s:2.0},
+];
+const MODEL_FOOT = {keep:2.6, well:2.3, shrine:2.3};
+function plotScale(pl){ return pl.s / (MODEL_FOOT[pl.id] || 2.5); }
+
+/* ---------- building models ---------- */
+function mKeep(x,y,l){
+  const stone='#d3cbb9', roofc='#b5463c';
+  let o = isoBox(x,y,0,2.6,2.6,0.16,'#b0a893');
+  o += isoBox(x+0.5,y+0.5,0.16,1.65,1.65,1.15,stone);
+  o += faceY(x+1.05,x+1.62,y+2.15,0.16,0.78,'#5f4024');
+  o += faceY(x+0.72,x+0.95,y+2.15,0.9,1.15,'#3e5a78');
+  o += faceX(y+0.85,y+1.1,x+2.15,0.9,1.15,'#3e5a78');
+  o += isoPyr(x+0.34,y+0.34,1.31,1.97,1.97,0.82,roofc);
+  o += isoCyl(x+0.38,y+0.38,0.16,0.42,1.55,stone);
+  o += isoCone(x+0.38,y+0.38,1.71,0.5,0.62,roofc);
+  o += isoCyl(x+2.22,y+2.22,0.16,0.42,1.35,stone);
+  o += isoCone(x+2.22,y+2.22,1.51,0.5,0.58,roofc);
+  if(l>=3){ o += isoCyl(x+2.22,y+0.38,0.16,0.38,1.45,stone) + isoCone(x+2.22,y+0.38,1.61,0.46,0.56,roofc); }
+  if(l>=5){ o += isoCyl(x+0.38,y+2.22,0.16,0.38,1.45,stone) + isoCone(x+0.38,y+2.22,1.61,0.46,0.56,roofc); }
+  o += propFlag(x+1.32,y+1.32,2.13,0.62,'#ffce54');
+  if(l>=7){ o += isoBox(x+0.5,y+0.5,1.31,1.65,1.65,0.08,'#e8b23c'); }
+  return o;
+}
+function mMine(x,y,l){
+  const rock='#8d949c';
+  let o = isoBox(x,y,0,2.5,2.5,0.12,'#9a8c72');
+  o += isoBox(x+0.95,y+0.15,0.12,1.45,1.85,1.05,rock);
+  o += isoBox(x+1.25,y+0.45,1.17,0.9,1.1,0.5,shade(rock,0.06));
+  o += faceY(x+1.15,x+1.95,y+2.0,0.12,0.95,'#241b12');
+  o += isoBox(x+1.05,y+1.95,0.12,0.12,0.1,1.0,'#7a5433');
+  o += isoBox(x+1.95,y+1.95,0.12,0.12,0.1,1.0,'#7a5433');
+  o += isoBox(x+1.0,y+1.93,1.12,1.15,0.14,0.16,'#8a5a34');
+  o += isoBox(x+1.3,y+2.05,0.12,0.1,0.45,0.06,'#6b6b73');
+  o += isoBox(x+1.72,y+2.05,0.1,0.1,0.45,0.06,'#6b6b73');
+  o += isoBox(x+1.28,y+2.2,0.18,0.6,0.34,0.34,'#7a5433');
+  o += isoDiamond(x+1.3,y+2.22,0.56,0.3,0.52,'#ffce54');
+  o += isoCone(x+0.55,y+1.3,0.12,0.34,0.26,'#ffce54');
+  if(l>=3) o += isoCone(x+0.5,y+0.75,0.12,0.3,0.22,'#f0a830');
+  if(l>=5) o += propBarrel(x+0.45,y+2.1,0.12,0.9);
+  return o;
+}
+function mForge(x,y,l){
+  const wall='#b0a086';
+  let o = isoBox(x,y,0,2.5,2.5,0.12,'#9a9186');
+  o += isoBox(x+0.3,y+0.35,0.12,1.9,1.7,0.88,wall);
+  o += isoRoof(x+0.14,y+0.19,1.0,2.22,2.02,0.55,'#7a4a2e');
+  o += faceY(x+0.95,x+1.6,y+2.05,0.12,0.72,'#2b1b10');
+  o += faceY(x+1.0,x+1.55,y+2.04,0.14,0.4,'#ff9a3c');
+  o += isoBox(x+1.72,y+0.5,1.0,0.36,0.36,0.75,'#8a7f70');
+  o += '<g opacity=".5">'+
+    '<circle cx="'+iso(x+1.9,y+0.68,1.9)[0].toFixed(1)+'" cy="'+iso(x+1.9,y+0.68,1.9)[1].toFixed(1)+'" r="9" fill="#e8e2d8"/>'+
+    '<circle cx="'+iso(x+1.9,y+0.68,2.25)[0].toFixed(1)+'" cy="'+iso(x+1.9,y+0.68,2.25)[1].toFixed(1)+'" r="12" fill="#e8e2d8" opacity=".7"/></g>';
+  o += isoCyl(x+0.6,y+2.1,0.12,0.26,0.22,'#6f6a62');
+  o += isoBox(x+0.42,y+1.95,0.34,0.5,0.3,0.16,'#565259');
+  if(l>=3) o += propCrate(x+2.0,y+2.0,0.12,0.9);
+  if(l>=5) o += propFlag(x+0.3,y+0.35,1.0,0.5,'#c0392b');
+  return o;
+}
+function mMarket(x,y,l){
+  let o = isoBox(x,y,0,2.5,2.5,0.12,'#a08f76');
+  o += isoBox(x+0.35,y+1.1,0.12,1.8,0.75,0.55,'#8a5a34');
+  o += isoBox(x+0.3,y+1.05,0.67,1.9,0.85,0.08,'#a97a45');
+  ['0.4','2.05'].forEach(function(dx){
+    o += isoCyl(x+parseFloat(dx), y+1.15, 0.12, 0.1, 1.5, '#7a5433');
+    o += isoCyl(x+parseFloat(dx), y+1.9, 0.12, 0.1, 1.5, '#7a5433');
+  });
+  o += isoRoof(x+0.2,y+0.95,1.6,2.15,1.15,0.42,'#6f5bb0');
+  o += poly([iso(x+0.6,y+0.95,1.6),iso(x+0.95,y+0.95,1.6),iso(x+0.95,y+1.53,2.02),iso(x+0.6,y+1.53,2.02)],'#efe6f7');
+  o += poly([iso(x+1.35,y+0.95,1.6),iso(x+1.7,y+0.95,1.6),iso(x+1.7,y+1.53,2.02),iso(x+1.35,y+1.53,2.02)],'#efe6f7');
+  o += '<g>'+poly([iso(x+0.8,y+1.35,0.75),iso(x+0.95,y+1.45,0.75),iso(x+0.875,y+1.4,1.15)],'#7fe3ff')+
+       poly([iso(x+1.3,y+1.3,0.75),iso(x+1.45,y+1.4,0.75),iso(x+1.375,y+1.35,1.05)],'#b28cf5')+'</g>';
+  if(l>=2) o += propCrate(x+2.0,y+0.4,0.12,0.8);
+  if(l>=3) o += propBarrel(x+0.4,y+0.4,0.12,0.9);
+  return o;
+}
+function mWell(x,y,l){
+  let o = isoBox(x,y,0,2.3,2.3,0.12,'#9d9488');
+  o += isoCyl(x+1.15,y+1.15,0.12,0.72,0.42,'#b4aea2');
+  o += '<ellipse cx="'+iso(x+1.15,y+1.15,0.54)[0].toFixed(1)+'" cy="'+iso(x+1.15,y+1.15,0.54)[1].toFixed(1)+
+       '" rx="'+(0.52*TW/2).toFixed(1)+'" ry="'+(0.52*TH/2).toFixed(1)+'" fill="#3f7fa8"/>';
+  o += '<ellipse cx="'+iso(x+1.15,y+1.15,0.54)[0].toFixed(1)+'" cy="'+(iso(x+1.15,y+1.15,0.54)[1]-2).toFixed(1)+
+       '" rx="'+(0.3*TW/2).toFixed(1)+'" ry="'+(0.3*TH/2).toFixed(1)+'" fill="#8fdcf5" opacity=".7"/>';
+  o += isoCyl(x+0.62,y+1.15,0.54,0.1,1.05,'#7a5433');
+  o += isoCyl(x+1.68,y+1.15,0.54,0.1,1.05,'#7a5433');
+  o += isoRoof(x+0.45,y+0.6,1.59,1.4,1.1,0.42,'#5d7fb0');
+  o += isoBox(x+1.05,y+1.05,1.25,0.2,0.2,0.22,'#8a5a34');
+  if(l>=3) o += propBush(x+0.4,y+1.9,0.12,0.9);
+  if(l>=5) o += propBush(x+1.95,y+0.35,0.12,0.9);
+  return o;
+}
+function mBarracks(x,y,l){
+  let o = isoBox(x,y,0,2.5,2.5,0.12,'#9a8f74');
+  o += isoBox(x+0.28,y+0.45,0.12,2.0,1.35,0.82,'#a68a5e');
+  o += isoRoof(x+0.12,y+0.28,0.94,2.32,1.68,0.58,'#4f6a94');
+  o += faceY(x+1.0,x+1.55,y+1.78,0.12,0.7,'#3a2718');
+  o += poly([iso(x+0.45,y+1.79,0.82),iso(x+0.75,y+1.79,0.82),iso(x+0.75,y+1.79,0.3),iso(x+0.6,y+1.79,0.42),iso(x+0.45,y+1.79,0.3)],'#c0392b');
+  o += poly([iso(x+1.8,y+1.79,0.82),iso(x+2.1,y+1.79,0.82),iso(x+2.1,y+1.79,0.3),iso(x+1.95,y+1.79,0.42),iso(x+1.8,y+1.79,0.3)],'#c0392b');
+  o += isoCyl(x+2.0,y+2.15,0.12,0.16,0.75,'#7a5433');
+  o += isoBox(x+1.75,y+2.08,0.72,0.55,0.14,0.14,'#8a5a34');
+  o += isoCyl(x+2.0,y+2.15,0.87,0.26,0.26,'#c9a06a');
+  if(l>=3) o += propCrate(x+0.35,y+2.05,0.12,0.85);
+  if(l>=5) o += propFlag(x+0.3,y+0.45,0.94,0.55,'#4f6a94');
+  return o;
+}
+function mWatch(x,y,l){
+  const stone='#c6bfad';
+  let o = isoBox(x,y,0,2.5,2.5,0.12,'#9a9186');
+  o += isoCyl(x+1.25,y+1.25,0.12,0.6,1.85,stone);
+  o += faceY(x+1.08,x+1.42,y+1.82,0.12,0.72,'#3a2718');
+  o += faceY(x+1.1,x+1.4,y+1.82,1.1,1.45,'#2f4a66');
+  o += isoCyl(x+1.25,y+1.25,1.97,0.8,0.2,shade(stone,-0.08));
+  o += isoCone(x+1.25,y+1.25,2.17,0.82,0.72,'#7a4a2e');
+  o += propFlag(x+1.25,y+1.25,2.89,0.5,'#4f6a94');
+  if(l>=3){ o += isoCyl(x+0.42,y+0.42,0.12,0.34,1.05,stone)+isoCone(x+0.42,y+0.42,1.17,0.45,0.45,'#7a4a2e'); }
+  if(l>=5){ o += propCrate(x+2.0,y+2.0,0.12,0.85); }
+  return o;
+}
+function mStore(x,y,l){
+  let o = isoBox(x,y,0,2.5,2.5,0.12,'#9a8f74');
+  o += isoBox(x+0.3,y+0.45,0.12,1.95,1.5,0.72,'#a6864f');
+  o += isoRoof(x+0.14,y+0.28,0.84,2.27,1.84,0.6,'#6b4a30');
+  o += faceY(x+0.92,x+1.7,y+1.95,0.12,0.66,'#45301b');
+  o += faceY(x+1.28,x+1.34,y+1.94,0.12,0.66,'#7a5433');
+  o += propCrate(x+2.05,y+1.9,0.12,0.9)+propBarrel(x+0.35,y+2.05,0.12,0.9);
+  if(l>=3) o += propCrate(x+2.05,y+1.9,0.42,0.75);
+  if(l>=5) o += propCrate(x+0.4,y+0.35,0.12,0.85);
+  return o;
+}
+function mBazaar(x,y,l){
+  let o = isoBox(x,y,0,2.5,2.5,0.12,'#a08f76');
+  o += isoBox(x+0.35,y+1.05,0.12,1.8,0.78,0.5,'#8a5a34');
+  o += isoBox(x+0.3,y+1.0,0.62,1.9,0.88,0.08,'#a97a45');
+  o += isoCyl(x+0.42,y+1.1,0.12,0.09,1.35,'#7a5433');
+  o += isoCyl(x+2.05,y+1.1,0.12,0.09,1.35,'#7a5433');
+  o += isoCyl(x+0.42,y+1.85,0.12,0.09,1.35,'#7a5433');
+  o += isoCyl(x+2.05,y+1.85,0.12,0.09,1.35,'#7a5433');
+  o += isoRoof(x+0.22,y+0.9,1.47,2.11,1.18,0.4,'#c0392b');
+  o += poly([iso(x+0.7,y+0.9,1.47),iso(x+1.0,y+0.9,1.47),iso(x+1.0,y+1.49,1.87),iso(x+0.7,y+1.49,1.87)],'#fff2df');
+  o += poly([iso(x+1.5,y+0.9,1.47),iso(x+1.8,y+0.9,1.47),iso(x+1.8,y+1.49,1.87),iso(x+1.5,y+1.49,1.87)],'#fff2df');
+  o += isoBox(x+0.7,y+1.3,0.7,0.3,0.28,0.16,'#e0a63c');
+  o += isoBox(x+1.35,y+1.35,0.7,0.28,0.26,0.14,'#6f9ad6');
+  o += propBarrel(x+2.05,y+0.4,0.12,0.85);
+  if(l>=3) o += propCrate(x+0.35,y+0.35,0.12,0.8);
+  if(l>=5) o += propFlag(x+2.2,y+2.2,0.12,0.8,'#c0392b');
+  return o;
+}
+function mShrine(x,y,l){
+  const stone='#cdc6b6';
+  let o = isoBox(x,y,0,2.3,2.3,0.12,'#9d9488');
+  o += isoBox(x+0.45,y+0.45,0.12,1.4,1.4,0.16,stone);
+  o += isoBox(x+0.62,y+0.62,0.28,1.06,1.06,0.14,shade(stone,0.06));
+  [[0.7,0.7],[1.6,0.7],[0.7,1.6],[1.6,1.6]].forEach(function(c){
+    o += isoCyl(x+c[0],y+c[1],0.42,0.13,0.9,stone);
+  });
+  o += isoPyr(x+0.5,y+0.5,1.32,1.3,1.3,0.5,'#7f90b8');
+  o += isoBox(x+0.98,y+0.98,0.42,0.34,0.34,0.34,shade(stone,-0.08));
+  const c = iso(x+1.15,y+1.15,0.95);
+  o += '<circle cx="'+c[0].toFixed(1)+'" cy="'+c[1].toFixed(1)+'" r="11" fill="#ffe9a8" opacity=".35" class="pulse"/>';
+  o += '<circle cx="'+c[0].toFixed(1)+'" cy="'+c[1].toFixed(1)+'" r="6" fill="#fff6d0"/>';
+  if(l>=3) o += propBush(x+0.35,y+1.95,0.12,0.8)+propBush(x+1.95,y+0.35,0.12,0.8);
+  if(l>=5) o += propFlag(x+0.35,y+0.35,0.12,0.9,'#b9a0e0');
+  return o;
+}
+function mSawmill(x,y,l){
+  let o = isoBox(x,y,0,2.5,2.5,0.12,'#9a8f74');
+  o += isoBox(x+0.35,y+0.5,0.12,1.7,1.3,0.66,'#a97a45');
+  o += isoRoof(x+0.2,y+0.34,0.78,1.98,1.62,0.52,'#6b4a30');
+  o += faceY(x+0.95,x+1.6,y+1.78,0.12,0.6,'#3f2c18');
+  const c = iso(x+2.15,y+1.4,0.55);
+  o += '<circle cx="'+c[0].toFixed(1)+'" cy="'+c[1].toFixed(1)+'" r="15" fill="#cdd3da" stroke="#5a5f66" stroke-width="2.5"/>';
+  o += '<circle cx="'+c[0].toFixed(1)+'" cy="'+c[1].toFixed(1)+'" r="4" fill="#7a5433"/>';
+  o += isoCyl(x+0.4,y+2.05,0.12,0.22,0.26,'#8a5a34');
+  o += isoCyl(x+0.4,y+2.05,0.38,0.22,0.26,'#9c6a3e');
+  o += isoCyl(x+0.85,y+2.15,0.12,0.2,0.24,'#8a5a34');
+  if(l>=3) o += isoBox(x+1.9,y+0.3,0.12,0.5,0.4,0.3,'#b9bcc2');
+  if(l>=5) o += propCrate(x+0.35,y+0.35,0.12,0.8);
+  return o;
+}
+const BUILDING_MODELS = {keep:mKeep, mine:mMine, forge:mForge, market:mMarket, well:mWell, barracks:mBarracks,
+  watch:mWatch, store:mStore, bazaar:mBazaar, shrine:mShrine, sawmill:mSawmill};
+
+function emptyPlot(x,y,s,soonDef){
+  let o = isoDiamond(x,y,s,s,0.02,'rgba(60,44,22,.28)',' stroke="rgba(255,246,226,.55)" stroke-width="2.5" stroke-dasharray="7 6"');
+  const c = iso(x+s/2, y+s/2, 0.02);
+  if(soonDef){
+    o += isoCyl(x+s/2-0.05,y+s/2,0.02,0.09,0.8,'#7a5433');
+    o += isoBox(x+s/2-0.45,y+s/2-0.05,0.82,0.9,0.1,0.5,'#a97a45');
+    o += '<text x="'+c[0].toFixed(1)+'" y="'+(c[1]-30).toFixed(1)+'" text-anchor="middle" font-size="18">'+soonDef.icon+'</text>';
+    o += label(x+s/2, y+s/2, -0.5, 'Wkrótce', '#ffe9b8', 12);
+  } else {
+    o += '<text x="'+c[0].toFixed(1)+'" y="'+(c[1]+4).toFixed(1)+'" text-anchor="middle" font-size="24">🔨</text>';
+  }
+  return o;
+}
+
+/* =====================================================================
+   5. STATE & RULES
+===================================================================== */
+const SAVE_KEY = 'eldren-save-v4';
+const OLD_KEYS = ['eldren-save-v3'];
+function baseAtk(l){ return 8 + (l-1)*2; }
+function baseDef(l){ return 3 + (l-1)*1; }
+function baseHp(l){ return 50 + (l-1)*8; }
+function expToNext(l){ return Math.round(40*Math.pow(l,1.55)); }
+function builtCount(s){ return Object.keys(BUILDINGS).filter(k=>(s.buildings[k]||0)>0).length; }
+function todayKey(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function defaultState(){
+  return {
+    name:'Bohater', level:1, exp:0, hp: baseHp(1), energy: 55, gold:140, gems:0, keys:0, chests:0,
+    equipment:{weapon:null,armor:null,shield:null,helm:null,gloves:null,boots:null,ring:null,amulet:null},
+    inventory:[], achLvl:{},
+    lastRegen: Date.now(), screen:'castle', openPanel:null, panelArg:null,
+    buildings:{keep:1, mine:0, forge:0, market:0, well:0, barracks:0},
+    mineAt: Date.now(), progress:{}, sawAt: Date.now(),
+    res:{wood:70, stone:60, shard:0}, nodes:{}, points:0, alloc:{atk:0,def:0,luck:0},
+    relics:{}, relicSlots:[null,null,null],
+    daily:null, statResets:0,
+    heroSpawn:{next: Date.now() + (30 + Math.random()*30)*60000, alive:false, at:0, spot:0},
+    battle:null, dungeon:null, seenIntro:false,
+    dockOpen: (typeof window!=='undefined' && window.innerWidth>=560),
+    questsOpen: (typeof window!=='undefined' && window.innerWidth>=900),
+    stats:{totalKills:0, kills:{}, lifetimeGold:140, bestRarityRank:0, bossesKilled:0, upgrades:0,
+           dailyDone:0, dungeonRuns:0, heroesKilled:0, bestDungeon:0},
+  };
+}
+function migrate(s){
+  const d = defaultState();
+  /* UWAGA: nie wolno mieszać d z s w miejscu — Object.assign(d,s) podmieniłby
+     zagnieżdżone obiekty domyślne i nowe pola (sloty, statystyki) by przepadły. */
+  const out = Object.assign({}, d, s);
+  out.equipment = Object.assign({}, d.equipment, s.equipment||{});
+  /* stary slot „accessory" stał się naszyjnikiem */
+  if(out.equipment.accessory){
+    const acc = out.equipment.accessory;
+    if(acc && !out.equipment.amulet){ acc.slot = 'amulet'; out.equipment.amulet = acc; }
+    delete out.equipment.accessory;
+  }
+  out.stats = Object.assign({}, d.stats, s.stats||{});
+  out.stats.kills = Object.assign({}, (s.stats && s.stats.kills)||{});
+  out.buildings = Object.assign({}, d.buildings, s.buildings||{});
+  out.res = Object.assign({}, d.res, s.res||{});
+  out.alloc = Object.assign({}, d.alloc, s.alloc||{});
+  out.heroSpawn = Object.assign({}, d.heroSpawn, s.heroSpawn||{});
+  out.progress = Object.assign({}, s.progress||{});
+  out.relics = Object.assign({}, s.relics||{});
+  out.relicSlots = Array.isArray(s.relicSlots) ? s.relicSlots.slice(0,3) : [null,null,null];
+  while(out.relicSlots.length < 3) out.relicSlots.push(null);
+  out.achLvl = Object.assign({}, s.achLvl||{});
+  out.nodes = Object.assign({}, s.nodes||{});
+  out.inventory = (s.inventory||[]).map(function(it){
+    if(it && it.slot === 'accessory') it.slot = 'amulet';
+    return it;
+  }).filter(function(it){ return it && SLOT_BASE[it.slot]; });
+  /* przedmiot musi pasować do slotu, w którym siedzi */
+  SLOT_KEYS.forEach(function(k){
+    const it = out.equipment[k];
+    if(it && it.slot !== k) out.equipment[k] = null;
+  });
+  Object.keys(out.equipment).forEach(function(k){
+    if(SLOT_KEYS.indexOf(k) < 0) delete out.equipment[k];
+  });
+  /* przerwana wyprawa do lochu (odświeżenie strony) — klucz wraca do sakwy */
+  if(s && s.dungeon) out.keys = (out.keys||0) + 1;
+  out.battle = null; out.dungeon = null;
+  if(!out.buildings.keep) out.buildings.keep = 1;
+  if(typeof out.keys !== 'number') out.keys = 0;
+  if(typeof out.chests !== 'number') out.chests = 0;
+  if(typeof out.res.shard !== 'number') out.res.shard = 0;
+  if(typeof out.points !== 'number') out.points = 0;
+  delete out.unlockedAch;
+  return out;
+}
+let state;
+try{
+  const hot = window.claude && window.claude.hot && window.claude.hot.data;
+  if(hot && hot.__eldren) state = migrate(hot.__eldren);
+}catch(e){}
+if(!state){
+  try{
+    let raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) for(const k of OLD_KEYS){ raw = localStorage.getItem(k); if(raw) break; }
+    if(raw) state = migrate(JSON.parse(raw));
+  }catch(e){}
+}
+if(!state) state = defaultState();
+function saveState(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }catch(e){} }
+
+function bLvl(id){ return state.buildings[id]||0; }
+function invCap(){ return 50 + bLvl('store')*10; }
+function zoneCost(z){ return Math.max(Math.ceil(z.energyCost*0.5), z.energyCost - Math.floor(bLvl('watch')/2)); }
+function sellPrice(it){ return Math.round(it.value * (1 + 0.25*(it.upg||0)) * (1 + bLvl('bazaar')*0.08)); }
+function expMult(){ return 1 + bLvl('shrine')*0.04; }
+function maxEnergy(){ return 50 + (state.level-1)*4 + bLvl('keep')*5; }
+function regenSeconds(){ return bLvl('well')>0 ? wellRegen(bLvl('well')) : 20; }
+function effStat(it,k){ return Math.round((it[k]||0) * (1 + 0.08*(it.upg||0))); }
+function alloc(k){ return (state.alloc && state.alloc[k]) || 0; }
+
+/* ---------- relikty ---------- */
+function relicLvl(id){
+  if(!state.relicSlots || state.relicSlots.indexOf(id) < 0) return 0;
+  return (state.relics && state.relics[id]) || 0;
+}
+function relicOwned(id){ return (state.relics && state.relics[id]) || 0; }
+
+function totalAtk(){ let v = baseAtk(state.level) + bLvl('barracks')*3 + alloc('atk')*2;
+  SLOT_KEYS.forEach(k=>{ const it=state.equipment[k]; if(it) v += effStat(it,'atk'); });
+  return Math.round(v * (1 + relicLvl('fury')*0.04)); }
+function totalDef(){ let v = baseDef(state.level) + bLvl('barracks')*2 + Math.round(alloc('def')*1.5) + relicLvl('titan')*2;
+  SLOT_KEYS.forEach(k=>{ const it=state.equipment[k]; if(it) v += effStat(it,'def'); }); return v; }
+function totalMaxHp(){ let v = baseHp(state.level) + relicLvl('titan')*28;
+  SLOT_KEYS.forEach(k=>{ const it=state.equipment[k]; if(it) v += effStat(it,'hp'); }); return v; }
+function sumStat(key){ let v = 0; SLOT_KEYS.forEach(k=>{ const it = state.equipment[k]; if(it) v += effStat(it,key); }); return v; }
+function bonusPct(){ return sumStat('bonus') + relicLvl('greed')*6; }
+function pLuck(){ return alloc('luck'); }
+function pCrit(){ return 5 + sumStat('crit') + pLuck()*0.2 + relicLvl('hunter')*2; }
+function dropBonus(){ return pLuck()*0.005 + relicLvl('greed')*0.02; }
+function pCritPow(){ return 150 + sumStat('critpow') + relicLvl('hunter')*6; }
+function pDodge(){ return Math.min(60, 3 + sumStat('dodge')); }
+function pStun(){ return sumStat('stun'); }
+function pSpeed(){ return sumStat('spd') + bLvl('barracks') + relicLvl('storm')*3; }
+function pBlock(){ return Math.min(70, sumStat('block') + relicLvl('aegis')*2.2); }
+if(state.hp > totalMaxHp()) state.hp = totalMaxHp();
+
+function toast(msg, cls){
+  const box = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = 'toast'+(cls?' '+cls:'');
+  el.textContent = msg;
+  box.appendChild(el);
+  setTimeout(()=>{ el.style.transition='opacity .4s'; el.style.opacity='0'; setTimeout(()=>el.remove(),400); }, 3200);
+}
+function regenEnergy(){
+  const now = Date.now(), max = maxEnergy(), per = regenSeconds()*1000;
+  if(state.energy >= max){ state.lastRegen = now; return; }
+  const gained = Math.floor((now - state.lastRegen)/per);
+  if(gained > 0){ state.energy = Math.min(max, state.energy + gained); state.lastRegen += gained*per; }
+}
+function addGold(n){ state.gold += n; state.stats.lifetimeGold += n; }
+function addGems(n){ state.gems += n; }
+
+/* ---------- items ---------- */
+let itemSeq = Date.now()%100000;
+function rollRarity(isBoss){
+  const key = isBoss ? 'wb' : 'w';
+  const total = RARITIES.reduce((a,r)=>a+r[key],0);
+  let roll = Math.random()*total;
+  for(const r of RARITIES){ if(roll < r[key]) return r; roll -= r[key]; }
+  return RARITIES[0];
+}
+function createItem(slot, tier, rarity){
+  const base = SLOT_BASE[slot], idx = tier-1;
+  const it = {id:'it'+(itemSeq++), slot, tier, rarity:rarity.id, name:base.names[idx], upg:0};
+  STAT_KEYS.forEach(function(k){
+    if(base[k]) it[k] = Math.max(1, Math.round(base[k][idx]*rarity.mult));
+  });
+  it.value = Math.round(10*tier*rarity.mult);
+  return it;
+}
+function createArtifact(key, tier){
+  const def = ARTIFACTS[key] || ARTIFACTS[ARTIFACT_KEYS[Math.floor(Math.random()*ARTIFACT_KEYS.length)]];
+  if(!def) return null;
+  const it = createItem(def.slot, tier, RARITIES.find(r=>r.id==='artifact'));
+  it.name = def.name; it.art = true; it.flavor = def.flavor;
+  Object.keys(def.extra).forEach(function(k){ it[k] = (it[k]||0) + def.extra[k]; });
+  it.value = Math.round(it.value*2.2);
+  return it;
+}
+function rarityInfo(id){ return RARITIES.find(r=>r.id===id) || RARITIES[0]; }
+function itemName(it){ return it.name + (it.upg ? ' +'+it.upg : ''); }
+function itemStats(it){
+  return STAT_KEYS.filter(k=>it[k]).map(k=>STAT_META[k].ic+effStat(it,k)+STAT_META[k].suf).join(' ');
+}
+function giveItem(it, quiet){
+  if(state.inventory.length >= invCap()){ toast('Plecak pełny — sprzedaj coś lub rozbuduj Magazyn!'); return false; }
+  state.inventory.push(it);
+  const rank = RARITIES.findIndex(r=>r.id===it.rarity)+1;
+  if(rank > state.stats.bestRarityRank) state.stats.bestRarityRank = rank;
+  if(!quiet) toast('🎁 '+itemName(it)+' ('+rarityInfo(it.rarity).label+')');
+  return true;
+}
+
+/* ---------- progression: osiągnięcia wielopoziomowe ---------- */
+let achBusy = false;
+function checkAchievements(){
+  if(achBusy) return;
+  achBusy = true;
+  if(!state.achLvl) state.achLvl = {};
+  let guard = 0;
+  let again = true;
+  while(again && guard++ < 40){
+    again = false;
+    ACHIEVEMENTS.forEach(function(a){
+      let lvl = achLevel(a.id);
+      while(lvl < a.tiers.length && a.get(state) >= a.tiers[lvl]){
+        lvl++;
+        state.achLvl[a.id] = lvl;
+        const rw = achReward(lvl);
+        addGold(rw.gold); addGems(rw.gems); grantExp(rw.exp);
+        toast('🏆 '+a.name+' '+toRoman(lvl)+' • +'+rw.gold+' złota • +'+rw.gems+' 💎', 'ach');
+        again = true;
+      }
+    });
+  }
+  achBusy = false;
+}
+
+/* ---------- zadania dzienne ---------- */
+function rollDaily(){
+  const pool = DAILY_POOL.slice();
+  const picked = [];
+  while(picked.length < DAILY_COUNT && pool.length){
+    picked.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
+  }
+  return {date: todayKey(), quests: picked.map(function(q){
+    let target = q.target;
+    if(q.id==='gold') target = Math.round(q.target * (1 + state.level*0.08));
+    if(q.id==='res')  target = Math.round(q.target * (1 + state.level*0.05));
+    if(q.id==='kill') target = q.target + Math.floor(state.level/10);
+    return {id:q.id, target:target, prog:0, claimed:false};
+  }), bonus:false};
+}
+function ensureDaily(){
+  if(!state.daily || state.daily.date !== todayKey()){
+    state.daily = rollDaily();
+    if(state.seenIntro) toast('📜 Nowe zadania dzienne czekają!');
+  }
+  return state.daily;
+}
+function dailyDef(id){ return DAILY_POOL.find(q=>q.id===id); }
+function questProgress(id, n){
+  const d = ensureDaily();
+  let changed = false;
+  d.quests.forEach(function(q){
+    if(q.id !== id || q.claimed) return;
+    if(q.prog >= q.target) return;
+    q.prog = Math.min(q.target, q.prog + n);
+    if(q.prog >= q.target){ toast('📜 Zadanie ukończone: '+dailyDef(id).name+' — odbierz skrzynię!'); }
+    changed = true;
+  });
+  if(changed){ renderQuests(); saveState(); }
+}
+function claimQuest(id){
+  const d = ensureDaily();
+  const q = d.quests.find(x=>x.id===id);
+  if(!q || q.claimed || q.prog < q.target) return;
+  q.claimed = true;
+  state.chests = (state.chests||0) + 1;
+  state.stats.dailyDone = (state.stats.dailyDone||0) + 1;
+  if(d.quests.every(x=>x.claimed) && !d.bonus){
+    d.bonus = true;
+    state.chests += 2;
+    toast('🎁 Komplet zadań — bonusowe 2 skrzynie!', 'ach');
+  }
+  toast('🎁 Skrzynia trafiła do plecaka (masz '+state.chests+').');
+  checkAchievements(); render(); saveState();
+}
+function openChest(){
+  if((state.chests||0) <= 0){ toast('Nie masz żadnej skrzyni.'); return null; }
+  state.chests--;
+  const t = bestTier();
+  const rw = {key:0, gold:0, gems:0, shard:0, item:null};
+  const roll = Math.random();
+  if(roll < 0.45) rw.key = 1;
+  else if(roll < 0.62) rw.key = 2;
+  rw.gold  = Math.round((90 + Math.random()*130) * t);
+  rw.shard = Math.round(6 + Math.random()*10 + t*2);
+  if(Math.random() < 0.35) rw.gems = 1 + Math.floor(Math.random()*t);
+  if(Math.random() < 0.5){
+    rw.item = createItem(SLOT_KEYS[Math.floor(Math.random()*SLOT_KEYS.length)], t, rollRarity(true));
+  }
+  state.keys = (state.keys||0) + rw.key;
+  addGold(rw.gold); addGems(rw.gems);
+  state.res.shard = (state.res.shard||0) + rw.shard;
+  if(rw.item && !giveItem(rw.item, true)){ rw.item = null; rw.lost = true; }
+  checkAchievements(); render(); saveState();
+  return rw;
+}
+
+/* ---------- relikty ---------- */
+function upgradeRelic(id){
+  const def = relicDef(id); if(!def) return;
+  const lvl = relicOwned(id);
+  if(lvl >= RELIC_MAX){ toast('Relikt osiągnął maksymalny poziom.'); return; }
+  const cost = relicCost(lvl);
+  if((state.res.shard||0) < cost){ toast('Potrzebujesz '+cost+' 🔮 odłamków.'); return; }
+  state.res.shard -= cost;
+  if(!state.relics) state.relics = {};
+  state.relics[id] = lvl + 1;
+  if(lvl === 0){
+    /* pierwszy zdobyty relikt od razu ląduje w wolnym gnieździe */
+    const free = state.relicSlots.indexOf(null);
+    if(free >= 0 && free < relicSlotCount()) state.relicSlots[free] = id;
+  }
+  toast(def.icon+' '+def.name+' — poziom '+(lvl+1));
+  if(state.hp > totalMaxHp()) state.hp = totalMaxHp();
+  checkAchievements(); render(); saveState();
+}
+function toggleRelic(id){
+  if(!relicOwned(id)){ toast('Najpierw odblokuj ten relikt.'); return; }
+  const slots = state.relicSlots, n = relicSlotCount();
+  const at = slots.indexOf(id);
+  if(at >= 0){ slots[at] = null; }
+  else {
+    let free = -1;
+    for(let i=0;i<n;i++) if(!slots[i]){ free = i; break; }
+    if(free < 0){ toast('Wszystkie gniazda zajęte — najpierw wyjmij inny relikt.'); return; }
+    slots[free] = id;
+  }
+  if(state.hp > totalMaxHp()) state.hp = totalMaxHp();
+  render(); saveState();
+}
+
+/* ---------- Wędrowny Heros ---------- */
+const HERO_SPOTS = [
+  {x:2.0, y:4.6}, {x:7.6, y:3.2}, {x:-2.4, y:2.0}, {x:13.6, y:7.0},
+  {x:0.4, y:14.2}, {x:-6.0, y:7.6}, {x:8.6, y:-4.0},
+];
+const HERO_LIFETIME = 10*60000;
+function heroRespawnDelay(){ return (30 + Math.random()*30)*60000; }
+function tickHero(){
+  const h = state.heroSpawn;
+  if(!h) return;
+  if(h.alive){
+    if(Date.now() - h.at > HERO_LIFETIME){
+      h.alive = false;
+      h.next = Date.now() + heroRespawnDelay();
+      toast('🦸 Wędrowny Heros ruszył dalej w świat...');
+      if(state.screen === 'world' && !state.battle) renderWorld();
+    }
+    return;
+  }
+  if(Date.now() >= h.next){
+    h.alive = true;
+    h.at = Date.now();
+    h.spot = Math.floor(Math.random()*HERO_SPOTS.length);
+    h.level = Math.max(4, Math.round(state.level * 1.15) + 3);
+    toast('🦸 Wędrowny Heros pojawił się na mapie świata!', 'ach');
+    if(state.screen === 'world' && !state.battle) renderWorld();
+  }
+}
+function heroMonster(){
+  const h = state.heroSpawn;
+  const lvl = h.level || Math.max(4, Math.round(state.level*1.15)+3);
+  return {name:'Wędrowny Heros', shape:'hero', level:lvl, kind:'hero', boss:true, elite:true,
+    refLevel: state.level, refTier: refTier(state.level),
+    p:{light:'#cfe0f5',base:'#7f97c4',dark:'#3d4d70',eye:'#25190f'}};
+}
+function heroCost(){ return 20 + Math.floor(state.level/2); }
+const POINTS_PER_LEVEL = 3;
+function grantExp(n){
+  state.exp += n;
+  let gained = 0;
+  while(state.exp >= expToNext(state.level)){ state.exp -= expToNext(state.level); state.level++; gained++; }
+  if(gained){
+    state.points = (state.points||0) + gained*POINTS_PER_LEVEL;
+    state.hp = totalMaxHp(); state.energy = maxEnergy();
+    toast('⭐ Poziom '+state.level+'! +'+(gained*POINTS_PER_LEVEL)+' punktów rozwoju', 'ach');
+  }
+}
+function spendPoint(key){
+  if((state.points||0) <= 0){ toast('Brak punktów rozwoju.'); return; }
+  if(!state.alloc) state.alloc = {atk:0,def:0,luck:0};
+  state.alloc[key] = (state.alloc[key]||0) + 1;
+  state.points--;
+  if(key === 'atk' || key === 'def') state.hp = Math.min(state.hp, totalMaxHp());
+  renderPanel(); renderHud(); saveState();
+}
+
+/* ---------- estate actions ---------- */
+function bcostFull(id, lvl){
+  return {gold:bcost(id,lvl),
+    wood:Math.round(16*Math.pow(1.6, lvl-1)),
+    stone:Math.round(12*Math.pow(1.6, lvl-1))};
+}
+function canAfford(c){ return state.gold >= c.gold && state.res.wood >= c.wood && state.res.stone >= c.stone; }
+function costHTML(c){
+  return resTag('gold', c.gold, state.gold < c.gold)+' • '+
+         resTag('wood', c.wood, state.res.wood < c.wood)+' • '+
+         resTag('stone', c.stone, state.res.stone < c.stone);
+}
+function buildOrUpgrade(id){
+  const def = BUILDINGS[id]; if(!def) return;
+  const lvl = bLvl(id), next = lvl+1;
+  if(next > def.max){ toast('Osiągnięto maksymalny poziom.'); return; }
+  if(id !== 'keep' && next > bLvl('keep')){ toast('Najpierw rozbuduj Zamek do poziomu '+next+'.'); return; }
+  const cost = bcostFull(id, next);
+  if(!canAfford(cost)){ toast('Brakuje surowców: '+cost.gold+' zł, '+cost.wood+' 🪵, '+cost.stone+' 🪨'); return; }
+  state.gold -= cost.gold; state.res.wood -= cost.wood; state.res.stone -= cost.stone;
+  if(id === 'mine' && lvl === 0) state.mineAt = Date.now();
+  if(id === 'mine') collectMine(true);
+  if(id === 'sawmill'){ if(lvl === 0) state.sawAt = Date.now(); else collectSaw(true); }
+  state.buildings[id] = next;
+  if(state.hp > totalMaxHp()) state.hp = totalMaxHp();
+  toast((lvl===0?'Wybudowano: ':'Ulepszono: ')+def.name+' (poz. '+next+')');
+  questProgress('build', 1);
+  checkAchievements(); render(); saveState();
+}
+function minePending(){
+  const lvl = bLvl('mine'); if(!lvl) return 0;
+  const hours = (Date.now() - (state.mineAt||Date.now()))/3600000;
+  return Math.min(mineCap(lvl), Math.floor(mineRate(lvl)*hours));
+}
+function collectMine(silent){
+  const amt = minePending();
+  state.mineAt = Date.now();
+  if(amt > 0){
+    addGold(amt);
+    questProgress('gold', amt);
+    if(!silent) questProgress('node', 1);
+    if(!silent) toast('⛏️ Zebrano '+amt+' złota z kopalni.');
+    checkAchievements();
+  } else if(!silent){ toast('Kopalnia jeszcze nic nie wydobyła.'); }
+  if(!silent){ render(); saveState(); }
+}
+function sawPending(res){
+  const l = bLvl('sawmill'); if(!l) return 0;
+  const hours = (Date.now() - (state.sawAt||Date.now()))/3600000;
+  return Math.min(sawCap(l), Math.floor(sawRate(l,res)*hours));
+}
+function collectSaw(silent){
+  const w = sawPending('wood'), s = sawPending('stone');
+  state.sawAt = Date.now();
+  if(w+s > 0){
+    state.res.wood += w; state.res.stone += s;
+    questProgress('res', w+s);
+    if(!silent) questProgress('node', 1);
+    if(!silent) toast('🪓 +'+w+' 🪵, +'+s+' 🪨');
+  } else if(!silent) toast('Tartak jeszcze nic nie wyprodukował.');
+  if(!silent){ render(); saveState(); }
+}
+function nodePending(id){
+  const nd = NODES.find(n=>n.id===id), st = nodeState(id);
+  if(!st.lvl) return 0;
+  const hours = (Date.now() - (st.at||Date.now()))/3600000;
+  return Math.min(nodeCap(nd, st.lvl), Math.floor(nodeRate(nd, st.lvl)*hours));
+}
+function collectNode(id){
+  const nd = NODES.find(n=>n.id===id), amt = nodePending(id);
+  nodeState(id).at = Date.now();
+  if(amt > 0){ state.res[nd.res] += amt; questProgress('res', amt); questProgress('node', 1);
+    toast(nd.icon+' +'+amt+' '+RES[nd.res].name); }
+  else toast('Złoże jeszcze nic nie dało.');
+  render(); saveState();
+}
+function fightGuardian(id){
+  if(state.battle) return;
+  const nd = NODES.find(n=>n.id===id), st = nodeState(id), cost = guardCost(st.lvl||0);
+  regenEnergy();
+  if(state.energy < cost){ toast('Za mało energii!'); return; }
+  state.energy -= cost;
+  state.hp = totalMaxHp();
+  const g = guardianOf(nd, st.lvl||0), s = monsterStats(g);
+  state.battle = {zoneId:null, guard:id, stageIdx:null, monster:Object.assign({}, g, s, {maxHp:s.hp}),
+    log:['Drogę zagradza '+g.name+'!'], pHit:false, mHit:false, mStun:0};
+  state.openPanel = null;
+  render(); saveState();
+  battleTimer = setInterval(battleTick, 700);
+}
+function forgeCost(it){ return Math.round(40*it.tier*Math.pow(1.7, it.upg||0)); }
+function forgeUpgrade(slot){
+  const it = state.equipment[slot]; if(!it) return;
+  const max = bLvl('forge');
+  if((it.upg||0) >= max){ toast('Kuźnia musi być na wyższym poziomie.'); return; }
+  const cost = forgeCost(it);
+  if(state.gold < cost){ toast('Potrzebujesz '+cost+' złota.'); return; }
+  state.gold -= cost;
+  it.upg = (it.upg||0)+1;
+  state.stats.upgrades = (state.stats.upgrades||0)+1;
+  toast('⚒️ '+it.name+' ulepszony do +'+it.upg);
+  questProgress('forge', 1);
+  checkAchievements(); render(); saveState();
+}
+function bestTier(){
+  let t = 1;
+  ZONES.forEach(z=>{ if(state.level >= z.unlockLevel) t = z.tier; });
+  return t;
+}
+function marketOffers(){
+  const l = bLvl('market'), t = bestTier();
+  const o = [
+    {id:'energy', name:'Flakon Energii', desc:'Natychmiast +100 energii', cost:3},
+    {id:'gold', name:'Sakwa Złota', desc:'+500 złota', cost:4},
+    {id:'chest1', name:'Skrzynia Wojownika', desc:'Losowy przedmiot (poz. krainy '+t+'), szansa na rzadki+', cost:6},
+  ];
+  o.push({id:'shards', name:'Woreczek Odłamków', desc:'+'+(40+t*10)+' 🔮 odłamków reliktów', cost:8});
+  o.push({id:'key', name:'Klucz do Lochów', desc:'+1 🗝️ klucz (poza zadaniami dziennymi)', cost:12});
+  if(l>=2) o.push({id:'chest2', name:'Skrzynia Mistrza', desc:'Przedmiot epicki lub lepszy', cost:18});
+  if(l>=3) o.push({id:'chest3', name:'Skrzynia Legend', desc:'Gwarantowany przedmiot legendarny', cost:45});
+  if(l>=4) o.push({id:'chest4', name:'Skrzynia Poszukiwacza', desc:'3 klucze i 150 🔮 odłamków', cost:60});
+  return o;
+}
+function buyOffer(id){
+  const off = marketOffers().find(o=>o.id===id); if(!off) return;
+  if(state.gems < off.cost){ toast('Potrzebujesz '+off.cost+' 💎 kryształów.'); return; }
+  const t = bestTier();
+  if(id==='energy'){ state.gems -= off.cost; state.energy = Math.min(maxEnergy(), state.energy+100); toast('Energia uzupełniona.'); }
+  else if(id==='gold'){ state.gems -= off.cost; addGold(500); toast('+500 złota'); }
+  else if(id==='shards'){ state.gems -= off.cost; state.res.shard = (state.res.shard||0) + 40 + t*10; toast('+'+(40+t*10)+' 🔮 odłamków'); }
+  else if(id==='key'){ state.gems -= off.cost; state.keys = (state.keys||0) + 1; toast('+1 🗝️ klucz do lochów'); }
+  else if(id==='chest4'){
+    state.gems -= off.cost;
+    state.keys = (state.keys||0) + 3;
+    state.res.shard = (state.res.shard||0) + 150;
+    toast('+3 🗝️ klucze • +150 🔮 odłamków');
+  }
+  else {
+    let rarity;
+    if(id==='chest1') rarity = rollRarity(true);
+    else if(id==='chest2') rarity = RARITIES[Math.random()<0.75?3:4];
+    else rarity = RARITIES[4];
+    const slot = SLOT_KEYS[Math.floor(Math.random()*SLOT_KEYS.length)];
+    const it = createItem(slot, t, rarity);
+    if(!giveItem(it)) return;
+    state.gems -= off.cost;
+  }
+  checkAchievements(); render(); saveState();
+}
+
+/* ---------- equipment ---------- */
+function equipItem(id){
+  const i = state.inventory.findIndex(x=>x.id===id); if(i<0) return;
+  const it = state.inventory[i], cur = state.equipment[it.slot];
+  state.equipment[it.slot] = it;
+  state.inventory.splice(i,1);
+  if(cur) state.inventory.push(cur);
+  if(state.hp > totalMaxHp()) state.hp = totalMaxHp();
+  checkAchievements(); render(); saveState();
+}
+function unequipItem(slot){
+  const it = state.equipment[slot]; if(!it) return;
+  if(state.inventory.length >= invCap()){ toast('Plecak pełny!'); return; }
+  state.equipment[slot] = null; state.inventory.push(it);
+  if(state.hp > totalMaxHp()) state.hp = totalMaxHp();
+  render(); saveState();
+}
+function sellItem(id){
+  const i = state.inventory.findIndex(x=>x.id===id); if(i<0) return;
+  const it = state.inventory[i];
+  const price = sellPrice(it);
+  addGold(price); state.inventory.splice(i,1);
+  questProgress('sell', 1); questProgress('gold', price);
+  hideTip();
+  toast('Sprzedano za '+price+' złota.');
+  checkAchievements(); render(); saveState();
+}
+function sellCommons(){
+  let n=0, sum=0;
+  state.inventory = state.inventory.filter(it=>{
+    if(it.rarity==='common' && !it.upg){ n++; sum += sellPrice(it); return false; }
+    return true;
+  });
+  if(n){ addGold(sum); questProgress('sell', n); questProgress('gold', sum);
+    toast('Sprzedano '+n+' przedmiotów za '+sum+' złota.'); checkAchievements(); render(); saveState(); }
+  else toast('Brak pospolitych przedmiotów do sprzedaży.');
+}
+
+/* ---------- battle ---------- */
+let battleTimer = null;
+/* skala pancerza rośnie z poziomem starcia, żeby obrona nigdy nie zerowała obrażeń */
+function defK(level){ return 80 + 16*level; }
+
+/* --- Krzywa mocy odniesienia ---------------------------------------
+   Statystyki potworów nie są zgadywane, tylko wyliczane z tego, ile
+   realnie ma bohater na danym poziomie (sensowny ekwipunek z aktualnej
+   krainy + rozdane punkty + koszary/kuźnia). Dzięki temu balans trzyma
+   się na każdym poziomie, nawet gdy zmienią się tabele przedmiotów. */
+function refTier(L){ let t = 1; ZONES.forEach(function(z){ if(L >= z.unlockLevel) t = z.tier; }); return t; }
+/* rozpiętość poziomów krainy — ile bohater zwykle w niej urośnie */
+ZONES.forEach(function(z, i){
+  const next = ZONES[i+1];
+  z.span = (next ? next.unlockLevel : z.unlockLevel + 14) - z.unlockLevel;
+});
+/* poziom bohatera, jakiego kraina spodziewa się na danym etapie */
+function stageRefLevel(z, idx){
+  const f = idx >= 3 ? 0.72 : (0.2 + idx*0.16);
+  return Math.max(1, Math.round(z.unlockLevel + z.span*f));
+}
+const REF_CACHE = {};
+function refPower(L, tier){
+  const ck = L+'/'+(tier||0);
+  if(REF_CACHE[ck]) return REF_CACHE[ck];
+  const idx = (tier || refTier(L)) - 1;
+  const rar = (L < 10 ? RARITIES[0] : RARITIES[1]).mult;
+  const upgM = 1 + 0.08*Math.min(6, Math.floor(L/6));
+  const bar = Math.min(15, Math.floor(L/6));
+  const pts = Math.round((L-1)*3*0.8);
+  let atk = baseAtk(L) + bar*3 + Math.round(pts*0.4)*2;
+  let def = baseDef(L) + bar*2 + Math.round(Math.round(pts*0.4)*1.5);
+  let hp  = baseHp(L);
+  SLOT_KEYS.forEach(function(k){
+    const b = SLOT_BASE[k];
+    if(b.atk) atk += Math.round(Math.max(1, Math.round(b.atk[idx]*rar))*upgM);
+    if(b.def) def += Math.round(Math.max(1, Math.round(b.def[idx]*rar))*upgM);
+    if(b.hp)  hp  += Math.round(Math.max(1, Math.round(b.hp[idx]*rar))*upgM);
+  });
+  REF_CACHE[ck] = {atk:atk, def:def, hp:hp};
+  return REF_CACHE[ck];
+}
+/* ile rund ma trwać starcie z danym typem przeciwnika */
+const PACE = {
+  normal:{kill:6,  survive:20},
+  boss:  {kill:12, survive:17},
+  elite: {kill:12, survive:14},
+};
+function monsterStats(m){
+  const L = m.level, K = defK(L);
+  /* moc odniesienia liczy się z poziomu i wyposażenia, jakie bohater
+     REALNIE ma na tej zawartości — nie z poziomu samego potwora */
+  const R = refPower(m.refLevel || L, m.refTier);
+  const pace = m.elite ? PACE.elite : m.boss ? PACE.boss : PACE.normal;
+  const def = Math.round(0.45*K);
+  const heroDmg = R.atk * (K/(K+def));
+  const hp  = Math.max(8, Math.round(heroDmg * pace.kill));
+  const atk = Math.max(2, Math.round(R.hp/pace.survive * (K+R.def)/K));
+  let gold = Math.round(4 + L*2.4 + Math.pow(L,1.45)*0.5);
+  let exp  = Math.round(8 + L*4 + Math.pow(L,1.5)*1.2);
+  let crit=5, critpow=150, dodge=3, stun=0, spd=0;
+  if(m.boss){ gold=Math.round(gold*3.5); exp=Math.round(exp*3.2); crit=12; critpow=170; dodge=7; stun=6; spd=10; }
+  if(m.elite){ gold=Math.round(gold*2.4); exp=Math.round(exp*2.4); crit=16; critpow=185; dodge=10; stun=8; spd=14; }
+  return {hp:hp, atk:atk, def:def, gold:gold, exp:exp, crit:crit, critpow:critpow, dodge:dodge, stun:stun, spd:spd};
+}
+function stageList(z){
+  return z.monsters.map(function(k,i){ return {key:k, idx:i, boss:false, cost:zoneCost(z)}; })
+    .concat([{key:z.boss, idx:3, boss:true, cost:Math.round(zoneCost(z)*1.8)}]);
+}
+function stageMonster(z, idx){
+  return Object.assign({}, MONSTERS[stageList(z)[idx].key],
+    {refLevel: stageRefLevel(z, idx), refTier: z.tier});
+}
+function zoneProgress(zid){ return (state.progress && state.progress[zid]) || 0; }
+function stageUnlocked(z, st){ return st.idx <= zoneProgress(z.id); }
+function zoneCleared(zid){ return zoneProgress(zid) >= 4; }
+function beginBattle(b){
+  state.battle = b;
+  state.openPanel = null;
+  render(); saveState();
+  if(battleTimer) clearInterval(battleTimer);
+  battleTimer = setInterval(battleTick, 700);
+}
+function startExplore(zoneId, stageIdx){
+  if(state.battle || state.dungeon) return;
+  const z = ZONES.find(x=>x.id===zoneId);
+  if(state.level < z.unlockLevel){ toast('Kraina zablokowana.'); return; }
+  const st = stageList(z)[stageIdx];
+  if(!st || !stageUnlocked(z, st)){ toast('Najpierw pokonaj wcześniejszy etap.'); return; }
+  regenEnergy();
+  if(state.energy < st.cost){ toast('Za mało energii!'); return; }
+  state.energy -= st.cost;
+  questProgress('energy', st.cost);
+  state.hp = totalMaxHp();
+  const def = stageMonster(z, stageIdx), ms = monsterStats(def);
+  beginBattle({zoneId, stageIdx, cost:st.cost, monster:Object.assign({}, def, ms, {maxHp:ms.hp}),
+    log:['Stajesz do walki z: '+def.name+(def.boss?' 👑':'')+'!'], pHit:false, mHit:false, mStun:0, pStun:0});
+}
+function fightGuardian(id){
+  if(state.battle || state.dungeon) return;
+  const nd = NODES.find(n=>n.id===id), st = nodeState(id), cost = guardCost(st.lvl||0);
+  regenEnergy();
+  if(state.energy < cost){ toast('Za mało energii!'); return; }
+  state.energy -= cost;
+  questProgress('energy', cost);
+  state.hp = totalMaxHp();
+  const g = guardianOf(nd, st.lvl||0), ms = monsterStats(g);
+  beginBattle({zoneId:null, guard:id, stageIdx:null, cost:cost, monster:Object.assign({}, g, ms, {maxHp:ms.hp}),
+    log:['Drogę zagradza '+g.name+'!'], pHit:false, mHit:false, mStun:0});
+}
+function fightHero(){
+  if(state.battle || state.dungeon) return;
+  if(!state.heroSpawn || !state.heroSpawn.alive){ toast('Herosa już tu nie ma.'); return; }
+  const cost = heroCost();
+  regenEnergy();
+  if(state.energy < cost){ toast('Za mało energii — potrzebujesz '+cost+' ⚡.'); return; }
+  state.energy -= cost;
+  questProgress('energy', cost);
+  state.hp = totalMaxHp();
+  const g = heroMonster(), ms = monsterStats(g);
+  beginBattle({zoneId:null, hero:true, stageIdx:null, cost:cost, monster:Object.assign({}, g, ms, {maxHp:ms.hp}),
+    log:['🦸 Wędrowny Heros dobywa oręża!'], pHit:false, mHit:false, mStun:0});
+}
+function pushLog(t){ const b=state.battle; if(!b) return; b.log.unshift(t); if(b.log.length>30) b.log.length=30; }
+function strike(atk, def, crit, critpow, K){
+  const v = 0.85 + Math.random()*0.3;
+  const isCrit = Math.random()*100 < crit;
+  let d = atk * (K/(K+def)) * v * (isCrit ? critpow/100 : 1);
+  return {d:Math.max(1,Math.round(d)), crit:isCrit};
+}
+function battleTick(){
+  try{ battleRound(); }
+  catch(err){
+    clearInterval(battleTimer); battleTimer = null;
+    state.battle = null; state.hp = totalMaxHp();
+    toast('Walka przerwana przez błąd — wracasz bezpiecznie.');
+    try{ render(); saveState(); }catch(e){}
+  }
+}
+function battleRound(){
+  const b = state.battle;
+  if(!b){ clearInterval(battleTimer); battleTimer=null; return; }
+  const m = b.monster;
+  const K = defK(m.level);
+  /* --- tura bohatera (szybkość daje szansę na dodatkowy cios) --- */
+  const hits = 1 + (Math.random()*100 < pSpeed() ? 1 : 0);
+  for(let i=0;i<hits;i++){
+    if(Math.random()*100 < m.dodge){ pushLog(m.name+' unika Twojego ciosu!'); continue; }
+    const a = strike(totalAtk(), m.def, pCrit(), pCritPow(), K);
+    m.hp -= a.d; b.mHit = true; b.pHit = false;
+    let extra = '';
+    const vamp = relicLvl('vampire');
+    if(vamp){
+      const heal = Math.max(1, Math.round(a.d * vamp*0.025));
+      const before = state.hp;
+      state.hp = Math.min(totalMaxHp(), state.hp + heal);
+      if(state.hp > before) extra = ' 🩸+'+(state.hp-before);
+    }
+    pushLog((i?'Dodatkowy cios: ':'Zadajesz ')+a.d+' obr.'+(a.crit?' 💥 KRYTYK!':'')+extra);
+    if(Math.random()*100 < pStun()){ b.mStun = 1; pushLog('⭐ Ogłuszasz przeciwnika!'); }
+    if(m.hp <= 0){ endBattle(true); return; }
+  }
+  /* --- tura potwora --- */
+  if(b.mStun > 0){ b.mStun--; pushLog(m.name+' jest ogłuszony i traci turę.'); renderBattle(); renderHud(); return; }
+  const mHits = 1 + (Math.random()*100 < (m.spd||0) ? 1 : 0);
+  for(let i=0;i<mHits;i++){
+    if(Math.random()*100 < pDodge()){ pushLog('🌀 Unikasz ataku!'); continue; }
+    const c = strike(m.atk, totalDef(), m.crit||5, m.critpow||150, K);
+    const blk = pBlock();
+    let dmg = c.d;
+    if(blk > 0) dmg = Math.max(1, Math.round(dmg * (1 - blk/100)));
+    state.hp -= dmg; b.pHit = true; b.mHit = false;
+    pushLog(m.name+' rani Cię za '+dmg+(c.crit?' 💥 KRYTYK!':'')+(blk>0?' 🧱':'')+'.');
+    if(state.hp <= 0){
+      const ph = relicLvl('phoenix');
+      if(ph && !b.revived){
+        b.revived = true;
+        state.hp = Math.max(1, Math.round(totalMaxHp()*(10+ph*4)/100));
+        pushLog('🪶 Łza Feniksa! Wstajesz z '+state.hp+' życia.');
+      } else { endBattle(false); return; }
+    }
+  }
+  renderBattle(); renderHud();
+}
+function endBattle(won){
+  clearInterval(battleTimer); battleTimer = null;
+  const b = state.battle, m = b.monster, z = ZONES.find(x=>x.id===b.zoneId);
+  const loot = {won:won, name:m.name, boss:!!m.boss, hero:!!b.hero, shape:m.shape, p:m.p, zone:z?z.name:'',
+                zoneId:b.zoneId, stageIdx:b.stageIdx, guard:b.guard, cost:b.cost||0,
+                gold:0, exp:0, gems:0, shard:0, item:null, lost:false, levelBefore:state.level};
+  /* porażka zwraca energię wydaną na wyprawę */
+  if(!won && loot.cost > 0){
+    state.energy = Math.min(maxEnergy(), state.energy + loot.cost);
+    loot.refund = loot.cost;
+  }
+  if(b.hero){
+    if(won){
+      state.heroSpawn.alive = false;
+      state.heroSpawn.next = Date.now() + heroRespawnDelay();
+      state.stats.heroesKilled = (state.stats.heroesKilled||0) + 1;
+      state.stats.totalKills++;
+      state.stats.kills.hero = (state.stats.kills.hero||0)+1;
+      questProgress('kill', 1);
+      loot.gold = Math.round(m.gold*(1+bonusPct()/100));
+      loot.exp  = Math.round(m.exp*(1+bonusPct()/100)*expMult());
+      loot.gems = 4 + Math.floor(Math.random()*6);
+      loot.shard = 15 + Math.floor(Math.random()*20);
+      addGold(loot.gold); grantExp(loot.exp); addGems(loot.gems);
+      state.res.shard = (state.res.shard||0) + loot.shard;
+      questProgress('gold', loot.gold);
+      const t = bestTier();
+      /* TYLKO heros może zostawić artefakt — 5% szansy */
+      let it = (Math.random() < 0.05 + dropBonus()*0.2) ? createArtifact(null, t) : null;
+      if(!it){
+        let rar = rollRarity(true);
+        const minRank = 3; /* z herosa zawsze epik lub lepszy */
+        if(RARITIES.findIndex(r=>r.id===rar.id) < minRank) rar = RARITIES[minRank];
+        it = createItem(SLOT_KEYS[Math.floor(Math.random()*SLOT_KEYS.length)], t, rar);
+      }
+      if(giveItem(it, true)) loot.item = it; else loot.lost = true;
+    }
+    loot.levelAfter = state.level;
+    state.hp = totalMaxHp();
+    checkAchievements();
+    state.battle = null;
+    render(); saveState();
+    showLootModal(loot);
+    return;
+  }
+  if(b.guard){
+    const nd = state.nodes[b.guard];
+    if(won){ nd.lvl = (nd.lvl||0)+1; nd.at = Date.now(); loot.nodeLvl = nd.lvl; loot.nodeId = b.guard;
+      loot.gold = Math.round(m.gold*0.6); addGold(loot.gold);
+      loot.exp = Math.round(m.exp*(1+bonusPct()/100)*expMult()); grantExp(loot.exp);
+      state.stats.totalKills++;
+      questProgress('kill', 1); questProgress('gold', loot.gold);
+    }
+    loot.levelAfter = state.level;
+    state.hp = totalMaxHp();
+    checkAchievements();
+    state.battle = null;
+    render(); saveState();
+    showLootModal(loot);
+    return;
+  }
+  if(won){
+    loot.gold = Math.round(m.gold*(1+bonusPct()/100));
+    loot.exp = Math.round(m.exp*(1+bonusPct()/100)*expMult());
+    addGold(loot.gold); grantExp(loot.exp);
+    state.stats.totalKills++;
+    state.stats.kills[m.kind] = (state.stats.kills[m.kind]||0)+1;
+    questProgress('kill', 1); questProgress('gold', loot.gold);
+    if(!state.progress) state.progress = {};
+    if(b.stageIdx === zoneProgress(z.id) && b.stageIdx < 4){
+      state.progress[z.id] = b.stageIdx + 1;
+      if(b.stageIdx < 3) loot.unlocked = stageList(z)[b.stageIdx+1];
+      else loot.dungeonOpen = z.dungeon;
+    }
+    if(m.boss){
+      state.stats.bossesKilled++;
+      questProgress('boss', 1);
+      loot.gems = 2 + Math.floor(Math.random()*z.tier);
+      addGems(loot.gems);
+      loot.shard = 4 + Math.floor(Math.random()*(3+z.tier));
+      state.res.shard = (state.res.shard||0) + loot.shard;
+      /* boss zawsze zostawia coś rzadkiego — artefaktów tu już nie ma */
+      let rar = rollRarity(true);
+      const minRank = 2;
+      if(RARITIES.findIndex(r=>r.id===rar.id) < minRank) rar = RARITIES[minRank];
+      const it = createItem(SLOT_KEYS[Math.floor(Math.random()*SLOT_KEYS.length)], z.tier, rar);
+      if(giveItem(it, true)) loot.item = it; else loot.lost = true;
+    } else {
+      if(Math.random() < 0.05){ loot.gems = 1; addGems(1); }
+      if(Math.random() < 0.42 + dropBonus()){
+        const it = createItem(SLOT_KEYS[Math.floor(Math.random()*SLOT_KEYS.length)], z.tier, rollRarity(false));
+        if(giveItem(it, true)) loot.item = it;
+        else loot.lost = true;
+      }
+    }
+  }
+  loot.levelAfter = state.level;
+  state.hp = totalMaxHp();
+  checkAchievements();
+  state.battle = null;
+  render(); saveState();
+  showLootModal(loot);
+}
+function fleeBattle(){
+  if(!state.battle) return;
+  clearInterval(battleTimer); battleTimer = null;
+  state.battle = null; state.hp = totalMaxHp();
+  render(); saveState();
+}
+
+/* =====================================================================
+   5b. LOCHY — minigra zręcznościowa na 60 sekund
+===================================================================== */
+const DG_W = 15, DG_H = 11, DG_TIME = 60000;
+const DG_LOOT = [
+  {k:'shard', icon:'🔮', w:54, min:1, max:3},
+  {k:'gold',  icon:'🪙', w:26, min:18, max:45},
+  {k:'big',   icon:'💠', w:12, min:7, max:12},
+  {k:'gems',  icon:'💎', w:8,  min:1, max:1},
+];
+let DG = null, dgTimer = null, dgHeld = null, dgHeldT = null;
+
+function dungeonUnlocked(zid){ return zoneCleared(zid); }
+function dgMakeGrid(seed){
+  const rnd = mkRnd(seed);
+  const g = [];
+  for(let y=0;y<DG_H;y++){
+    const row = [];
+    for(let x=0;x<DG_W;x++) row.push(x===0||y===0||x===DG_W-1||y===DG_H-1 ? 1 : 0);
+    g.push(row);
+  }
+  /* regularne filary + losowe bloki, zawsze z przejściem dookoła */
+  for(let y=2;y<DG_H-2;y+=2){
+    for(let x=2;x<DG_W-2;x+=2){
+      if(rnd() < 0.78) g[y][x] = 1;
+      if(rnd() < 0.3 && x+1 < DG_W-1) g[y][x+1] = 1;
+    }
+  }
+  const cx = (DG_W>>1), cy = (DG_H>>1);
+  g[cy][cx] = 0; g[cy][cx-1] = 0; g[cy][cx+1] = 0; g[cy-1][cx] = 0; g[cy+1][cx] = 0;
+  /* odetnij kieszenie, do których nie da się dojść */
+  const seen = [];
+  for(let y=0;y<DG_H;y++) seen.push(new Array(DG_W).fill(false));
+  const q = [[cx,cy]]; seen[cy][cx] = true;
+  while(q.length){
+    const c = q.shift();
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(function(d){
+      const nx=c[0]+d[0], ny=c[1]+d[1];
+      if(nx<0||ny<0||nx>=DG_W||ny>=DG_H) return;
+      if(g[ny][nx] || seen[ny][nx]) return;
+      seen[ny][nx] = true; q.push([nx,ny]);
+    });
+  }
+  for(let y=0;y<DG_H;y++) for(let x=0;x<DG_W;x++) if(!g[y][x] && !seen[y][x]) g[y][x] = 1;
+  return g;
+}
+function dgFreeCells(){
+  const out = [];
+  if(!DG) return out;
+  for(let y=1;y<DG_H-1;y++) for(let x=1;x<DG_W-1;x++) if(!DG.grid[y][x]) out.push({x,y});
+  return out;
+}
+function dgOccupied(x,y){
+  if(!DG) return true;
+  if(DG.player.x===x && DG.player.y===y) return true;
+  return DG.items.some(i=>i.x===x&&i.y===y) || DG.ghosts.some(gh=>gh.x===x&&gh.y===y);
+}
+function dgSpawnItem(){
+  if(!DG) return;
+  const free = dgFreeCells().filter(c=>!dgOccupied(c.x,c.y));
+  if(!free.length) return;
+  const c = free[Math.floor(Math.random()*free.length)];
+  const total = DG_LOOT.reduce((a,l)=>a+l.w,0);
+  let roll = Math.random()*total, def = DG_LOOT[0];
+  for(const l of DG_LOOT){ if(roll < l.w){ def = l; break; } roll -= l.w; }
+  const amt = def.min + Math.floor(Math.random()*(def.max-def.min+1));
+  DG.items.push({x:c.x, y:c.y, k:def.k, icon:def.icon, amt:amt});
+}
+function enterDungeon(zoneId){
+  if(state.battle || state.dungeon) return;
+  const z = ZONES.find(x=>x.id===zoneId);
+  if(!z) return;
+  if(!dungeonUnlocked(zoneId)){ toast('Najpierw pokonaj wszystkie etapy tej krainy.'); return; }
+  if((state.keys||0) < 1){ toast('🗝️ Potrzebujesz klucza — znajdziesz go w skrzyniach za zadania dzienne.'); return; }
+  state.keys--;
+  state.openPanel = null;
+  state.dungeon = {zoneId:zoneId};
+  DG = {
+    zone: z, tier: z.dungeon.tier,
+    grid: dgMakeGrid(Math.floor(Math.random()*9000)+7),
+    player: {x:(DG_W>>1), y:(DG_H>>1)},
+    items: [], ghosts: [],
+    endAt: Date.now() + DG_TIME,
+    bag: {shard:0, gold:0, gems:0}, picks: 0, hits: 0, flash: 0, respawns: [],
+  };
+  for(let i=0;i<14;i++) dgSpawnItem();
+  const ghostCount = Math.min(4, 1 + Math.floor(z.tier/2));
+  const corners = [{x:1,y:1},{x:DG_W-2,y:1},{x:1,y:DG_H-2},{x:DG_W-2,y:DG_H-2}];
+  for(let i=0;i<ghostCount;i++){
+    let c = corners[i % corners.length];
+    if(DG.grid[c.y][c.x]) c = dgFreeCells()[0];
+    DG.ghosts.push({x:c.x, y:c.y, t:0});
+  }
+  saveState();
+  render();
+  if(dgTimer) clearInterval(dgTimer);
+  dgTimer = setInterval(dgTick, 260);
+  toast('⏱️ 60 sekund! Zbieraj, ile zdołasz.');
+}
+function dgMove(dx, dy){
+  if(!DG) return;
+  const nx = DG.player.x+dx, ny = DG.player.y+dy;
+  if(nx<0||ny<0||nx>=DG_W||ny>=DG_H) return;
+  if(DG.grid[ny][nx]) return;
+  DG.player.x = nx; DG.player.y = ny;
+  dgCollect();
+  renderDungeon();
+}
+function dgCollect(){
+  if(!DG) return;
+  const p = DG.player;
+  for(let i=DG.items.length-1;i>=0;i--){
+    const it = DG.items[i];
+    if(it.x!==p.x || it.y!==p.y) continue;
+    DG.items.splice(i,1);
+    DG.picks++;
+    if(it.k==='gold') DG.bag.gold += it.amt;
+    else if(it.k==='gems') DG.bag.gems += it.amt;
+    else DG.bag.shard += it.amt;
+    DG.respawns.push(setTimeout(dgSpawnItem, 600 + Math.random()*900));
+  }
+}
+function dgTick(){
+  if(!DG){ clearInterval(dgTimer); dgTimer=null; return; }
+  if(Date.now() >= DG.endAt){ endDungeon(); return; }
+  DG.ghosts.forEach(function(gh){
+    gh.t++;
+    if(gh.t % 2) return;
+    const p = DG.player;
+    const opts = [[1,0],[-1,0],[0,1],[0,-1]].filter(function(d){
+      const nx=gh.x+d[0], ny=gh.y+d[1];
+      return nx>0 && ny>0 && nx<DG_W-1 && ny<DG_H-1 && !DG.grid[ny][nx];
+    });
+    if(!opts.length) return;
+    let pick;
+    if(Math.random() < 0.55){
+      opts.sort(function(a,b){
+        const da = Math.abs(gh.x+a[0]-p.x)+Math.abs(gh.y+a[1]-p.y);
+        const db = Math.abs(gh.x+b[0]-p.x)+Math.abs(gh.y+b[1]-p.y);
+        return da-db;
+      });
+      pick = opts[0];
+    } else pick = opts[Math.floor(Math.random()*opts.length)];
+    gh.x += pick[0]; gh.y += pick[1];
+  });
+  const p = DG.player;
+  if(DG.ghosts.some(g=>g.x===p.x&&g.y===p.y) && Date.now() - (DG.lastHit||0) > 1200){
+    DG.lastHit = Date.now();
+    DG.hits++;
+    DG.endAt -= 5000;
+    DG.flash = 3;
+    const lost = Math.min(DG.bag.shard, 2);
+    DG.bag.shard -= lost;
+    toast('👻 Zjawa! −5 s'+(lost?' i −'+lost+' 🔮':''));
+  }
+  if(DG.flash > 0) DG.flash--;
+  dgCollect();
+  renderDungeon();
+}
+function endDungeon(){
+  if(dgTimer){ clearInterval(dgTimer); dgTimer = null; }
+  if(dgHeld){ clearInterval(dgHeld); dgHeld = null; }
+  if(dgHeldT){ clearTimeout(dgHeldT); dgHeldT = null; }
+  if(!DG) return;
+  (DG.respawns||[]).forEach(clearTimeout);
+  const bag = DG.bag, picks = DG.picks, z = DG.zone;
+  const mult = 1 + (z.dungeon.tier-1)*0.35;
+  const shard = Math.max(1, Math.round(bag.shard*mult));
+  const gold  = Math.round(bag.gold*mult*(1+bonusPct()/100));
+  const gems  = bag.gems;
+  state.res.shard = (state.res.shard||0) + shard;
+  addGold(gold); addGems(gems);
+  questProgress('gold', gold);
+  state.stats.dungeonRuns = (state.stats.dungeonRuns||0) + 1;
+  if(picks > (state.stats.bestDungeon||0)) state.stats.bestDungeon = picks;
+  DG = null; state.dungeon = null;
+  checkAchievements(); render(); saveState();
+  const d = modal('<h3 class="display">'+z.dungeon.icon+' '+z.dungeon.name+'</h3>'+
+    '<p class="muted" style="margin-top:-2px">Czas minął — zebrano '+picks+' skarbów.</p>'+
+    '<div style="margin-top:8px">'+
+    '<div class="loot-row"><span>🔮 Odłamki reliktów</span><b>+'+shard+'</b></div>'+
+    '<div class="loot-row"><span>🪙 Złoto</span><b>+'+gold+'</b></div>'+
+    (gems?'<div class="loot-row"><span>💎 Kryształy</span><b>+'+gems+'</b></div>':'')+
+    '</div>'+
+    '<p class="muted" style="font-size:12.5px;margin-top:9px">Odłamki wydasz na relikty w panelu Postaci.</p>'+
+    '<div class="row"><button class="btn" data-close="1">Odbierz</button></div>');
+  d.querySelector('[data-close]').onclick = function(){ d.remove(); render(); };
+}
+function quitDungeon(){
+  if(!DG) return;
+  DG.endAt = Date.now();
+  endDungeon();
+}
+function renderDungeon(){
+  const layer = document.getElementById('layer-dungeon');
+  if(!DG || !state.dungeon){ layer.hidden = true; layer.innerHTML = ''; return; }
+  layer.hidden = false;
+  const left = Math.max(0, DG.endAt - Date.now());
+  const pct = left/DG_TIME*100;
+  let cells = '';
+  for(let y=0;y<DG_H;y++){
+    for(let x=0;x<DG_W;x++){
+      const wall = DG.grid[y][x];
+      let inner = '';
+      const it = DG.items.find(i=>i.x===x&&i.y===y);
+      const gh = DG.ghosts.find(g=>g.x===x&&g.y===y);
+      const isP = DG.player.x===x && DG.player.y===y;
+      if(isP) inner = '<span class="dg-p">🧙</span>';
+      else if(gh) inner = '<span class="dg-g">👻</span>';
+      else if(it) inner = '<span class="dg-i">'+it.icon+'</span>';
+      cells += '<div class="dg-c'+(wall?' w':'')+'">'+inner+'</div>';
+    }
+  }
+  layer.innerHTML =
+    '<div class="dg-hud">'+
+      '<div class="dg-time"><b>'+(left/1000).toFixed(1)+' s</b>'+
+        '<div class="hbar" style="height:11px;margin-top:4px"><i class="en" style="width:'+pct+'%"></i></div></div>'+
+      '<div class="dg-bag"><span>🔮 '+DG.bag.shard+'</span><span>🪙 '+DG.bag.gold+'</span><span>💎 '+DG.bag.gems+'</span></div>'+
+      '<button class="flee" data-action="dgquit">Wyjdź</button>'+
+    '</div>'+
+    '<div class="dg-wrap'+(DG.flash?' hit':'')+'"><div class="dg-grid" style="grid-template-columns:repeat('+DG_W+',1fr)">'+cells+'</div></div>'+
+    '<div class="dg-pad">'+
+      '<button class="dg-b" data-dg="0,-1">▲</button>'+
+      '<div class="dg-mid"><button class="dg-b" data-dg="-1,0">◀</button>'+
+      '<button class="dg-b" data-dg="1,0">▶</button></div>'+
+      '<button class="dg-b" data-dg="0,1">▼</button>'+
+    '</div>'+
+    '<div class="dg-tip">Strzałki / WASD albo panel poniżej. Omijaj 👻 — kradną czas i odłamki.</div>';
+}
+function initDungeonControls(){
+  const KEYS = {ArrowUp:[0,-1], ArrowDown:[0,1], ArrowLeft:[-1,0], ArrowRight:[1,0],
+    w:[0,-1], s:[0,1], a:[-1,0], d:[1,0], W:[0,-1], S:[0,1], A:[-1,0], D:[1,0]};
+  document.addEventListener('keydown', function(e){
+    if(!DG || !state.dungeon) return;
+    const k = KEYS[e.key];
+    if(!k) return;
+    e.preventDefault();
+    dgMove(k[0], k[1]);
+  });
+  function startHold(dx,dy){
+    dgMove(dx,dy);
+    stopHold();
+    dgHeldT = setTimeout(function(){ dgHeld = setInterval(function(){ dgMove(dx,dy); }, 130); }, 260);
+  }
+  function stopHold(){
+    if(dgHeld){ clearInterval(dgHeld); dgHeld = null; }
+    if(dgHeldT){ clearTimeout(dgHeldT); dgHeldT = null; }
+  }
+  document.addEventListener('pointerdown', function(e){
+    const b = e.target.closest && e.target.closest('[data-dg]');
+    if(!b || !DG) return;
+    e.preventDefault();
+    const p = b.dataset.dg.split(',');
+    startHold(parseInt(p[0],10), parseInt(p[1],10));
+  });
+  ['pointerup','pointercancel','pointerleave'].forEach(function(ev){
+    document.addEventListener(ev, stopHold);
+  });
+  /* przesunięcie palcem po planszy */
+  let sx=0, sy=0, on=false;
+  document.addEventListener('pointerdown', function(e){
+    if(!DG || !e.target.closest || !e.target.closest('.dg-wrap')) return;
+    on = true; sx = e.clientX; sy = e.clientY;
+  });
+  document.addEventListener('pointermove', function(e){
+    if(!on || !DG) return;
+    const dx = e.clientX-sx, dy = e.clientY-sy;
+    if(Math.abs(dx) < 26 && Math.abs(dy) < 26) return;
+    if(Math.abs(dx) > Math.abs(dy)) dgMove(dx>0?1:-1, 0); else dgMove(0, dy>0?1:-1);
+    sx = e.clientX; sy = e.clientY;
+  });
+  document.addEventListener('pointerup', function(){ on = false; });
+}
+
+/* =====================================================================
+   6. SCENE RENDERERS
+===================================================================== */
+function mkRnd(seed){
+  let s = seed;
+  return function(){ s = (s*9301 + 49297) % 233280; return s/233280; };
+}
+/* one continuous landmass that runs past the edges of the screen */
+function groundPlane(x0, y0, size, base, seed, count){
+  let o = isoDiamond(x0, y0, size, size, 0, base);
+  const rnd = mkRnd(seed||11);
+  for(let i=0;i<(count||120);i++){
+    const px = x0 + rnd()*size, py = y0 + rnd()*size, w = 1.1 + rnd()*2.8, r = rnd();
+    o += isoDiamond(px, py, w, w, 0.002, shade(base, r>0.5 ? 0.06 : -0.07));
+  }
+  for(let i=0;i<(count||120)/5;i++){
+    const px = x0 + rnd()*size, py = y0 + rnd()*size;
+    o += isoDiamond(px, py, 0.5+rnd()*0.7, 0.5+rnd()*0.7, 0.003, shade(base, 0.14));
+  }
+  return o;
+}
+function svgWrap(viewBox, inner){
+  return '<div class="iso-stage"><svg viewBox="'+viewBox+'" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'+inner+'</svg></div>';
+}
+const DECOR = [
+  {t:'tree',x:-0.3,y:2.4,s:.95},{t:'tree',x:-0.35,y:7.6,s:.9},{t:'tree',x:-0.3,y:11.4,s:.95},
+  {t:'bush',x:-0.3,y:5.4,s:.85},{t:'rock',x:-0.35,y:9.6,s:.85},
+  {t:'tree',x:2.6,y:-0.4,s:.95},{t:'bush',x:6.4,y:-0.35,s:.85},{t:'tree',x:8.2,y:-0.4,s:.9},
+  {t:'rock',x:11.6,y:-0.35,s:.85},{t:'tree',x:14.6,y:-0.35,s:.9},
+  {t:'tree',x:15.5,y:2.6,s:.95},{t:'bush',x:15.5,y:7.2,s:.85},{t:'tree',x:15.55,y:11.5,s:.9},
+  {t:'rock',x:15.5,y:6.0,s:.8},{t:'tree',x:2.5,y:15.5,s:.95},{t:'bush',x:6.6,y:15.5,s:.85},
+  {t:'tree',x:8.4,y:15.5,s:.9},{t:'rock',x:11.8,y:15.5,s:.85},{t:'tree',x:14.8,y:15.4,s:.9},
+  {t:'bush',x:6.4,y:3.6,s:.8},{t:'rock',x:9.9,y:4.2,s:.75},{t:'bush',x:3.9,y:9.4,s:.8},
+  {t:'rock',x:6.3,y:11.9,s:.75},{t:'bush',x:10.2,y:9.6,s:.8},
+];
+function decorSVG(d){
+  if(d.t==='tree') return propTree(d.x,d.y,0,d.s);
+  if(d.t==='bush') return propBush(d.x,d.y,0,d.s);
+  return propRock(d.x,d.y,0,d.s);
+}
+function levelBadge(x,y,z,lvl){
+  const p = iso(x,y,z);
+  return '<g><circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="12" fill="#2a1e13" stroke="#ffce54" stroke-width="2.5"/>'+
+    '<text x="'+p[0].toFixed(1)+'" y="'+(p[1]+4.5).toFixed(1)+'" text-anchor="middle" font-family="Baloo 2,sans-serif" font-size="13" font-weight="800" fill="#ffce54">'+lvl+'</text></g>';
+}
+function scaledModel(pl, lvl){
+  const k = plotScale(pl), a = iso(pl.x, pl.y, 0);
+  return '<g transform="translate('+a[0].toFixed(1)+','+a[1].toFixed(1)+') scale('+k.toFixed(3)+
+    ') translate('+(-a[0]).toFixed(1)+','+(-a[1]).toFixed(1)+')">'+BUILDING_MODELS[pl.id](pl.x, pl.y, lvl)+'</g>';
+}
+function renderCastle(){
+  const layer = document.getElementById('layer-castle');
+  const draw = [];
+  let base = groundPlane(-17, -17, LAND+34, '#5f9440', 13, 150);
+  /* outer woodland so the land never reads as empty */
+  const wr = mkRnd(29);
+  for(let i=0;i<46;i++){
+    const px = -15 + wr()*(LAND+30), py = -15 + wr()*(LAND+30);
+    if(px > -2.2 && px < LAND+2.2 && py > -2.2 && py < LAND+2.2) continue;
+    base += (wr() > 0.25 ? propTree(px, py, 0, 0.8+wr()*0.4, wr()>0.6) : propRock(px, py, 0, 0.7+wr()*0.3));
+  }
+  base += isoBox(-0.9,-0.9,0,LAND+1.8,LAND+1.8,0.14,'#84c65d');
+  const road = 'rgba(214,192,146,.9)';
+  let estate = '';
+  [3.0, 7.35, 11.7].forEach(function(v){
+    estate += isoDiamond(0.15, v, LAND-0.3, 0.85, 0.012, road);
+    estate += isoDiamond(v, 0.15, 0.85, LAND-0.3, 0.012, road);
+  });
+  DECOR.forEach(d=>draw.push({k:d.x+d.y, s:decorSVG(d)}));
+  PLOTS.forEach(pl=>{
+    const lvl = bLvl(pl.id), cx = pl.x+pl.s/2, cy = pl.y+pl.s/2;
+    let g = '';
+    if(pl.soon){
+      g += emptyPlot(pl.x,pl.y,pl.s,SOON[pl.id]);
+      g += label(cx, cy, -0.9, SOON[pl.id].name, '#e8dcc0', 13);
+    } else if(lvl > 0){
+      g += isoDiamond(pl.x-0.1,pl.y-0.1,pl.s+0.2,pl.s+0.2,0.012,'rgba(198,178,134,.8)');
+      g += scaledModel(pl, lvl);
+      g += levelBadge(pl.x+pl.s*0.92, pl.y+0.1, 1.05, lvl);
+      g += label(cx, cy, -0.55, BUILDINGS[pl.id].name, '#fff6e2', 13);
+      if(pl.id==='sawmill' && (sawPending('wood')+sawPending('stone'))>0){
+        const p = iso(cx, cy, 1.75);
+        g += '<g class="coin-ready"><circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="15" fill="#2a1e13" stroke="#ffce54" stroke-width="2.5"/>'+
+             '<text x="'+p[0].toFixed(1)+'" y="'+(p[1]+6).toFixed(1)+'" text-anchor="middle" font-size="15">🪵</text></g>';
+      }
+      if(pl.id==='mine' && minePending()>0){
+        const p = iso(cx, cy, 1.75);
+        g += '<g class="coin-ready"><circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="15" fill="#2a1e13" stroke="#ffce54" stroke-width="2.5"/>'+
+             '<text x="'+p[0].toFixed(1)+'" y="'+(p[1]+6).toFixed(1)+'" text-anchor="middle" font-size="16">💰</text></g>';
+      }
+    } else {
+      g += emptyPlot(pl.x,pl.y,pl.s,null);
+      g += label(cx, cy, -0.55, BUILDINGS[pl.id].name, '#ffe9b8', 13);
+      g += label(cx, cy, -0.9, bcost(pl.id,1)+' złota', '#d8c6a4', 11.5);
+    }
+    draw.push({k:pl.x+pl.y+pl.s/2, s:'<g class="clickable" data-action="plot" data-id="'+pl.id+'">'+g+'</g>'});
+  });
+  draw.sort((a,b)=>a.k-b.k);
+  layer.innerHTML = svgWrap('-480 -150 960 690',
+    base + '<g transform="translate(0,'+(-0.14*TZ).toFixed(2)+')">' + estate + draw.map(d=>d.s).join('') + '</g>');
+}
+
+/* ---------- world map ---------- */
+function landDecor(z){
+  const i = z.isl, x = i.x, y = i.y, w = i.w;
+  let o = '';
+  if(z.land==='meadow'){
+    o += propTree(x+0.7,y+0.8,0,.95) + propTree(x+3.6,y+3.4,0,.85) + propBush(x+3.3,y+0.9,0,1);
+    o += isoCyl(x+1.1,y+3.3,0,0.1,0.7,'#7a5433') + isoBox(x+0.8,y+3.25,0.6,0.62,0.1,0.34,'#a97a45');
+    o += propBush(x+2.2,y+3.7,0,.8);
+  } else if(z.land==='forest'){
+    o += propTree(x+0.8,y+0.9,0,1.05,true)+propTree(x+2.6,y+0.7,0,.85,true)+propTree(x+3.5,y+2.6,0,1,true)+
+         propTree(x+1.0,y+3.3,0,.9,true)+propTree(x+2.3,y+2.2,0,.75,true);
+  } else if(z.land==='cave'){
+    o += isoBox(x+1.0,y+0.7,0,2.2,2.4,1.35,'#8d949c');
+    o += isoBox(x+1.35,y+1.0,1.35,1.4,1.6,0.6,'#9aa1a9');
+    o += faceY(x+1.6,x+2.6,y+3.1,0,1.0,'#191c22');
+    o += poly([iso(x+1.6,y+3.1,1.0),iso(x+2.6,y+3.1,1.0),iso(x+2.1,y+3.1,1.32)],'#191c22');
+    o += propRock(x+0.5,y+3.4,0,.9)+propRock(x+3.5,y+0.6,0,.8);
+  } else if(z.land==='swamp'){
+    o += '<ellipse cx="'+iso(x+2.1,y+2.2,0.02)[0].toFixed(1)+'" cy="'+iso(x+2.1,y+2.2,0.02)[1].toFixed(1)+
+         '" rx="46" ry="23" fill="#3f4f35"/>';
+    o += '<ellipse cx="'+iso(x+2.1,y+2.2,0.02)[0].toFixed(1)+'" cy="'+(iso(x+2.1,y+2.2,0.02)[1]-3).toFixed(1)+
+         '" rx="30" ry="14" fill="#5c7a4a" opacity=".65"/>';
+    o += isoCyl(x+0.9,y+0.8,0,0.16,1.25,'#4e4130')+isoCyl(x+3.4,y+3.2,0,0.14,1.0,'#4e4130');
+    o += propBush(x+3.5,y+0.8,0,.8);
+  } else if(z.land==='waste'){
+    o += propRock(x+0.7,y+0.8,0,1.0) + propRock(x+3.3,y+3.2,0,.85);
+    o += isoCyl(x+1.6,y+1.6,0,0.5,0.35,'#5e2a10');
+    o += '<ellipse cx="'+iso(x+1.85,y+1.85,0.35)[0].toFixed(1)+'" cy="'+iso(x+1.85,y+1.85,0.35)[1].toFixed(1)+
+         '" rx="20" ry="10" fill="#ff8a3c" opacity=".75" class="pulse"/>';
+    o += isoCyl(x+3.2,y+0.9,0,0.12,0.9,'#3a2418') + isoCyl(x+0.8,y+3.3,0,0.1,0.7,'#3a2418');
+  } else if(z.land==='ice'){
+    o += isoCone(x+1.0,y+1.0,0,0.6,1.5,'#d6f2ff') + isoCone(x+3.2,y+2.6,0,0.5,1.2,'#bfe6f7');
+    o += isoCone(x+2.2,y+3.4,0,0.4,0.9,'#eafaff');
+    o += isoDiamond(x+1.7,y+1.7,1.4,1.4,0.17,'#9fd8ef');
+  } else if(z.land==='void'){
+    const c = iso(x+2.1,y+2.2,0.3);
+    o += '<ellipse cx="'+c[0].toFixed(1)+'" cy="'+c[1].toFixed(1)+'" rx="44" ry="22" fill="#1a0f33"/>';
+    o += '<ellipse cx="'+c[0].toFixed(1)+'" cy="'+(c[1]-3).toFixed(1)+'" rx="28" ry="14" fill="#6f42b0" opacity=".7" class="pulse"/>';
+    o += isoCyl(x+0.7,y+0.8,0,0.14,1.3,'#3d2a5e') + isoCyl(x+3.4,y+3.3,0,0.14,1.1,'#3d2a5e');
+    o += propRock(x+3.4,y+0.7,0,.8);
+  } else {
+    o += isoBox(x+0.9,y+1.2,0,0.45,0.45,1.5,'#8b8494');
+    o += isoBox(x+2.9,y+1.2,0,0.45,0.45,1.5,'#8b8494');
+    o += isoBox(x+0.9,y+1.2,1.5,2.45,0.45,0.35,'#9e97ab');
+    o += faceY(x+1.45,x+2.75,y+1.62,0,1.45,'#221d2c');
+    o += isoBox(x+1.2,y+3.2,0,0.5,0.2,0.6,'#8b8494');
+    o += isoBox(x+2.6,y+3.5,0,0.45,0.2,0.5,'#8b8494');
+    o += propRock(x+3.4,y+2.6,0,.8);
+  }
+  return o;
+}
+function renderWorld(){
+  const layer = document.getElementById('layer-world');
+  const centers = {};
+  ZONES.forEach(z=>{ centers[z.id] = iso(z.isl.x+z.isl.w/2, z.isl.y+z.isl.d/2, 0); });
+  let paths = groundPlane(-20, -20, 56, '#5d8f3e', 41, 170);
+  const wr = mkRnd(67);
+  for(let i=0;i<70;i++){
+    const px = -22 + wr()*60, py = -22 + wr()*60;
+    let near = false;
+    ZONES.concat(NODES).forEach(z=>{
+      if(px > z.isl.x-3 && px < z.isl.x+z.isl.w+3 && py > z.isl.y-3 && py < z.isl.y+z.isl.d+3) near = true;
+    });
+    if(near) continue;
+    paths += (wr() > 0.3 ? propTree(px, py, 0, 0.75+wr()*0.45, wr()>0.5) : propRock(px, py, 0, 0.7+wr()*0.3));
+  }
+  function trail(a, b, w){
+    return '<path d="M'+P(a)+' Q'+((a[0]+b[0])/2).toFixed(1)+','+((a[1]+b[1])/2-46).toFixed(1)+' '+P(b)+
+      '" fill="none" stroke="rgba(226,204,158,.95)" stroke-width="'+w+'" stroke-linecap="round"/>'+
+      '<path d="M'+P(a)+' Q'+((a[0]+b[0])/2).toFixed(1)+','+((a[1]+b[1])/2-46).toFixed(1)+' '+P(b)+
+      '" fill="none" stroke="rgba(255,246,226,.6)" stroke-width="'+Math.max(3,w/3.6)+'" stroke-linecap="round" stroke-dasharray="2 16"/>';
+  }
+  for(let i=0;i<ZONES.length-1;i++) paths += trail(centers[ZONES[i].id], centers[ZONES[i+1].id], 15);
+  NODES.forEach(function(nd){
+    if(!nd.near || !centers[nd.near]) return;
+    paths += trail(centers[nd.near], iso(nd.isl.x+nd.isl.w/2, nd.isl.y+nd.isl.d/2, 0), 10);
+  });
+  const draw = [];
+  let highest = ZONES[0];
+  ZONES.forEach(z=>{ if(state.level >= z.unlockLevel) highest = z; });
+  ZONES.forEach(z=>{
+    const locked = state.level < z.unlockLevel, i = z.isl;
+    let g = isoBox(i.x, i.y, 0, i.w, i.d, 0.16, z.grass);
+    g += isoDiamond(i.x+0.3, i.y+0.3, i.w-0.6, i.d-0.6, 0.165, shade(z.grass, 0.07));
+    g += landDecor(z);
+    if(z.id === highest.id){
+      const hp = iso(i.x+i.w/2-1.2, i.y+i.d/2+1.1, 0);
+      g += '<g transform="translate('+(hp[0]-26).toFixed(1)+','+(hp[1]-52).toFixed(1)+')">'+
+           '<svg width="52" height="52" viewBox="0 0 100 100">'+CREATURES.hero({}, 'h'+(uidSeq++))+'</svg></g>';
+    }
+    g += label(i.x+i.w/2, i.y+i.d/2, 2.25, z.name, locked?'#c9bda6':'#fff6e2', 15);
+    g += label(i.x+i.w/2, i.y+i.d/2, 1.9, locked ? ('🔒 wymaga poz. '+z.unlockLevel) : ('poz. '+MONSTERS[z.monsters[0]].level+'–'+MONSTERS[z.boss].level+' • '+zoneCost(z)+' ⚡'),
+        locked?'#c9bda6':'#ffe9b8', 11.5);
+    const wrap = locked
+      ? '<g style="filter:grayscale(.75) brightness(.78)" data-action="zone" data-id="'+z.id+'">'+g+'</g>'
+      : '<g class="clickable" data-action="zone" data-id="'+z.id+'">'+g+'</g>';
+    draw.push({k:i.x+i.y, s:wrap});
+  });
+  NODES.forEach(function(nd){
+    const st = nodeState(nd.id), i = nd.isl, lvl = st.lvl||0;
+    let g = '';
+    /* surroundings that say what the node harvests */
+    const sr = mkRnd(nd.res === 'wood' ? 91 : 137);
+    for(let t=0;t<16;t++){
+      const px = i.x - 2.6 + sr()*(i.w + 5.2), py = i.y - 2.6 + sr()*(i.d + 5.2);
+      if(px > i.x-0.6 && px < i.x+i.w+0.6 && py > i.y-0.6 && py < i.y+i.d+0.6) continue;
+      g += nd.res === 'wood' ? propTree(px, py, 0, 0.85+sr()*0.35, true) : propRock(px, py, 0, 0.75+sr()*0.45);
+    }
+    g += isoBox(i.x, i.y, 0, i.w, i.d, 0.16, nd.grass);
+    g += isoDiamond(i.x+0.3, i.y+0.3, i.w-0.6, i.d-0.6, 0.165, shade(nd.grass, 0.08));
+    if(nd.res === 'wood'){
+      g += propTree(i.x+0.8, i.y+0.8, 0.16, 0.9, true) + propTree(i.x+2.3, i.y+1.0, 0.16, 0.75, true);
+      g += isoCyl(i.x+1.0, i.y+2.2, 0.16, 0.22, 0.26, '#8a5a34') + isoCyl(i.x+1.0, i.y+2.2, 0.42, 0.22, 0.26, '#9c6a3e');
+      g += isoBox(i.x+1.7, i.y+2.1, 0.16, 0.5, 0.4, 0.3, '#a97a45');
+    } else {
+      g += isoBox(i.x+0.8, i.y+0.7, 0.16, 1.3, 1.4, 0.85, '#8d949c');
+      g += isoBox(i.x+1.1, i.y+1.0, 1.01, 0.7, 0.8, 0.4, '#9aa1a9');
+      g += faceY(i.x+1.1, i.x+1.8, i.y+2.1, 0.16, 0.75, '#191c22');
+      g += propRock(i.x+2.2, i.y+2.1, 0.16, 0.85) + propRock(i.x+0.5, i.y+2.3, 0.16, 0.7);
+    }
+    g += label(i.x+i.w/2, i.y+i.d/2, 2.1, nd.icon+' '+nd.name, '#fff6e2', 14);
+    g += label(i.x+i.w/2, i.y+i.d/2, 1.78, lvl>0 ? ('poz. '+lvl+' • '+nodeRate(nd,lvl)+'/h') : 'strzeżone — pokonaj strażnika', '#ffe9b8', 11.5);
+    if(nodePending(nd.id) > 0){
+      const p = iso(i.x+i.w/2, i.y+i.d/2, 1.4);
+      g += '<g class="coin-ready"><circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="15" fill="#2a1e13" stroke="#ffce54" stroke-width="2.5"/>'+
+           '<text x="'+p[0].toFixed(1)+'" y="'+(p[1]+6).toFixed(1)+'" text-anchor="middle" font-size="15">'+nd.icon+'</text></g>';
+    }
+    draw.push({k:i.x+i.y, s:'<g class="clickable" data-action="node" data-id="'+nd.id+'">'+g+'</g>'});
+  });
+  /* --- Wędrowny Heros --- */
+  const hs = state.heroSpawn;
+  if(hs && hs.alive){
+    const spot = HERO_SPOTS[hs.spot % HERO_SPOTS.length];
+    const hm = heroMonster();
+    const c = iso(spot.x, spot.y, 0);
+    let g = '<ellipse cx="'+c[0].toFixed(1)+'" cy="'+c[1].toFixed(1)+'" rx="34" ry="17" fill="#ffce54" opacity=".28" class="pulse"/>';
+    g += '<g transform="translate('+(c[0]-33).toFixed(1)+','+(c[1]-74).toFixed(1)+')">'+
+         '<svg width="66" height="66" viewBox="0 0 100 100">'+CREATURES.hero({}, 'wh'+(uidSeq++))+'</svg></g>';
+    g += label(spot.x, spot.y, 3.35, '🦸 Wędrowny Heros', '#ffe9b8', 14);
+    g += label(spot.x, spot.y, 3.0, 'poz. '+hm.level+' • '+heroCost()+' ⚡ • znika za '+
+      fmtT((HERO_LIFETIME-(Date.now()-hs.at))/1000), '#fff6e2', 11.5);
+    draw.push({k:spot.x+spot.y+0.01, s:'<g class="clickable" data-action="hero">'+g+'</g>'});
+  }
+  draw.sort((a,b)=>a.k-b.k);
+  layer.innerHTML = svgWrap('-500 -120 900 640', paths + draw.map(d=>d.s).join(''));
+}
+
+/* ---------- battle ---------- */
+function renderBattle(){
+  const layer = document.getElementById('layer-battle');
+  const b = state.battle;
+  if(!b){ layer.hidden = true; layer.innerHTML=''; return; }
+  const m = b.monster;
+  let bgStyle, arenaName;
+  if(b.guard){
+    const nd = NODES.find(n=>n.id===b.guard);
+    arenaName = (nd ? nd.icon+' '+nd.name : 'Złoże');
+    bgStyle = nd && nd.res === 'stone'
+      ? 'linear-gradient(180deg,#a9b0b8 0%,#6c757e 46%,#2f353c 100%)'
+      : 'linear-gradient(180deg,#b7cfa0 0%,#5f8a4a 46%,#2a3f22 100%)';
+  } else {
+    const z = ZONES.find(x=>x.id===b.zoneId);
+    arenaName = z ? z.name : 'Pojedynek';
+    bgStyle = z ? z.bg : 'linear-gradient(180deg,#9fb2d4 0%,#5b6f9c 46%,#28324f 100%)';
+  }
+  layer.hidden = false;
+  layer.style.background = bgStyle;
+  const hpP = Math.max(0,state.hp)/totalMaxHp()*100, hpM = Math.max(0,m.hp)/m.maxHp*100;
+  layer.innerHTML =
+    '<div class="bt-arena">'+
+      '<div class="bt-side"><div class="bt-stage'+(b.pHit?' hit':'')+'">'+creatureSVG('hero',{})+'</div>'+
+        '<div class="plate">'+state.name+' • '+state.level+'</div>'+
+        '<div class="hbar bt-hp"><i class="hp" style="width:'+hpP+'%"></i></div>'+
+        '<div class="hrow">'+Math.max(0,state.hp)+' / '+totalMaxHp()+'</div></div>'+
+      '<div class="vs">VS</div>'+
+      '<div class="bt-side"><div class="bt-stage'+(b.mHit?' hit':'')+'">'+creatureSVG(m.shape,m.p)+'</div>'+
+        '<div class="plate">'+m.name+(m.boss?' 👑':'')+' • '+m.level+'</div>'+
+        '<div class="hbar bt-hp"><i class="hp" style="width:'+hpM+'%"></i></div>'+
+        '<div class="hrow">'+Math.max(0,m.hp)+' / '+m.maxHp+'</div></div>'+
+    '</div>'+
+    '<div class="bt-log-wrap"><div class="bt-log-head"><b>'+arenaName+'</b>'+
+      '<button class="flee" data-action="flee">Wycofaj się</button></div>'+
+      '<div class="bt-log">'+b.log.map(l=>'<div>'+l+'</div>').join('')+'</div></div>';
+}
+
+/* ---------- HUD ---------- */
+function fmtT(sec){ sec=Math.max(0,Math.ceil(sec)); const m=Math.floor(sec/60), s=sec%60; return m+':'+(s<10?'0':'')+s; }
+function renderHud(){
+  regenEnergy();
+  if(state.dungeon){
+    document.getElementById('hud-tl').innerHTML = '';
+    document.getElementById('hud-tr').innerHTML = '';
+    document.getElementById('hud-bottom').innerHTML = '';
+    renderQuests(); hideTip();
+    return;
+  }
+  const max = maxEnergy(), per = regenSeconds();
+  const toNext = state.energy>=max ? 0 : per - ((Date.now()-state.lastRegen)/1000 % per);
+  document.getElementById('hud-tl').innerHTML =
+    '<div class="hud-av">'+creatureSVG('hero',{})+'</div>'+
+    '<div class="hud-st"><div class="hud-name">'+state.name+' • Poz. '+state.level+'</div>'+
+      '<div class="hrow">❤<div class="hbar"><i class="hp" style="width:'+(Math.max(0,state.hp)/totalMaxHp()*100)+'%"></i></div>'+Math.max(0,state.hp)+'</div>'+
+      '<div class="hrow">⚡<div class="hbar"><i class="en" style="width:'+(state.energy/max*100)+'%"></i></div>'+state.energy+'/'+max+'</div>'+
+      '<div class="hrow">✦<div class="hbar"><i class="xp" style="width:'+(state.exp/expToNext(state.level)*100)+'%"></i></div>'+
+        (toNext>0?'+1⚡ '+fmtT(toNext):'pełna')+'</div>'+
+    '</div>';
+  const pts = state.points||0;
+  const readyQ = state.daily ? state.daily.quests.filter(q=>!q.claimed && q.prog>=q.target).length : 0;
+  function badge(n, color){
+    return n ? '<span style="position:absolute;top:-5px;right:-5px;background:'+(color||'var(--danger)')+';color:#fff;border-radius:50%;min-width:20px;height:20px;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid #2a1e13">'+n+'</span>' : '';
+  }
+  document.getElementById('hud-tr').innerHTML =
+    '<div class="res-row">'+
+      '<div class="res gold" '+resTip('gold')+'><span class="coin"></span>'+state.gold+'</div>'+
+      '<div class="res" style="color:#e0b070" '+resTip('wood')+'>🪵'+state.res.wood+'</div>'+
+      '<div class="res" style="color:#ccd2d8" '+resTip('stone')+'>🪨'+state.res.stone+'</div>'+
+      '<div class="res gem" '+resTip('gems')+'>💎'+state.gems+'</div></div>'+
+    '<div class="res-row">'+
+      '<div class="res" style="color:#c48ef5" '+resTip('shard')+'>🔮'+(state.res.shard||0)+'</div>'+
+      '<div class="res" style="color:#ffce54" '+resTip('keys')+'>🗝️'+(state.keys||0)+'</div>'+
+    '</div>'+
+    '<div class="icon-row">'+
+      '<button class="ibtn" data-action="panel" data-id="character" title="Postać" style="position:relative">🧙'+badge(pts)+'</button>'+
+      '<button class="ibtn" data-action="panel" data-id="inventory" title="Ekwipunek">🎒</button>'+
+      '<button class="ibtn" data-action="panel" data-id="relics" title="Relikty">🔮</button>'+
+      '<button class="ibtn" data-action="panel" data-id="achievements" title="Osiągnięcia">🏆</button>'+
+      '<button class="ibtn" data-action="quests" title="Zadania dzienne" style="position:relative">📜'+badge(readyQ,'var(--ok)')+'</button>'+
+      '<button class="ibtn dim" data-action="settings" title="Ustawienia">⚙️</button>'+
+    '</div>';
+  const bottom = document.getElementById('hud-bottom');
+  if(state.battle || state.dungeon){ bottom.innerHTML = ''; renderQuests(); hideTip(); return; }
+  const prevGrid = bottom.querySelector('.bag-grid');
+  const prevScroll = prevGrid ? prevGrid.scrollTop : 0;
+  const onCastle = state.screen === 'castle';
+  bottom.innerHTML =
+    '<button class="nav-btn'+(onCastle?'':' castle')+'" data-action="nav">'+
+      '<span class="ic">'+(onCastle?'🗺️':'🏰')+'</span><span class="lb">'+(onCastle?'ŚWIAT':'ZAMEK')+'</span></button>'+
+    renderDock();
+  const grid = bottom.querySelector('.bag-grid');
+  if(grid && prevScroll) grid.scrollTop = prevScroll;
+  /* keep the sidebar clear of the hero card, whatever height it ends up */
+  const card = document.getElementById('hud-tl'), dock = bottom.querySelector('.dock');
+  if(card && dock && window.innerWidth > 760){
+    const top = card.getBoundingClientRect().bottom + 12;
+    dock.style.top = top+'px';
+    dock.style.maxHeight = 'calc(100vh - '+(top+24)+'px)';
+  }
+  renderQuests();
+}
+
+/* ---------- widget zadań dziennych ---------- */
+function renderQuests(){
+  const box = document.getElementById('hud-quests');
+  if(!box) return;
+  if(state.battle || state.dungeon){ box.innerHTML = ''; return; }
+  const d = ensureDaily();
+  const open = state.questsOpen !== false;
+  const ready = d.quests.filter(q=>!q.claimed && q.prog>=q.target).length;
+  let h = '<div class="quests'+(open?'':' min')+'"><div class="q-head"><b>📜 Zadania dzienne</b>'+
+    (ready && open ? '<span class="q-badge">'+ready+'</span>' : '')+
+    '<button class="dock-tog" data-action="quests" title="'+(open?'Ukryj':'Pokaż')+'">'+(open?'▾':'▸')+'</button></div>';
+  if(open){
+    h += '<div class="q-body">';
+    d.quests.forEach(function(q){
+      const def = dailyDef(q.id); if(!def) return;
+      const done = q.prog >= q.target;
+      h += '<div class="q-item'+(done?' done':'')+(q.claimed?' claimed':'')+'">'+
+        '<div class="q-top"><span class="qi">'+def.icon+'</span>'+def.name+'</div>'+
+        '<div class="q-desc">'+def.desc(q.target)+'</div>'+
+        '<div class="bar-lg" style="height:8px"><i style="width:'+Math.min(100,q.prog/q.target*100)+'%"></i></div>'+
+        '<div class="q-foot"><span>'+Math.min(q.prog,q.target)+' / '+q.target+'</span>'+
+        (q.claimed ? '<span style="color:var(--ok);font-weight:800">✓ odebrane</span>'
+          : '<button class="btn sm" data-action="claimquest" data-id="'+q.id+'" '+(done?'':'disabled')+'>Skrzynia</button>')+
+        '</div></div>';
+    });
+    h += '</div>';
+    h += '<div class="q-chest"><span>🎁 Skrzynie: <b style="color:var(--gold)">'+(state.chests||0)+'</b></span>'+
+      '<button class="btn sm" data-action="openchest" '+((state.chests||0)>0?'':'disabled')+'>Otwórz</button></div>';
+    if(!d.bonus) h += '<div class="q-desc" style="margin:6px 0 0">Komplet 3 zadań = 2 dodatkowe skrzynie.</div>';
+  }
+  box.innerHTML = h+'</div>';
+}
+
+/* ---------- equipment dock ---------- */
+function cellHTML(it, kind, key){
+  if(!it){
+    return '<div class="cell free '+(kind==='eq'?'eqslot':'')+'">'+(kind==='eq'?SLOT_BASE[key].icon:'')+'</div>';
+  }
+  const r = rarityInfo(it.rarity);
+  return '<div class="cell'+(kind==='eq'?' eqslot':'')+'" style="border-color:'+r.color+';background:'+r.color+'22" '+
+    'data-tip="'+(kind==='eq'?'eq:'+key:'bag:'+it.id)+'">'+itemIcon(it, kind==='eq'?34:30)+
+    (it.upg?'<span class="up">+'+it.upg+'</span>':'')+'</div>';
+}
+function renderDock(){
+  const open = state.dockOpen !== false;
+  const pts = state.points||0;
+  let h = '<div class="dock'+(open?'':' min')+'"><div class="dock-head"><b>🧙 '+state.name+'</b>'+
+    (pts && open ? '<span class="pts-badge">'+pts+' pkt</span>' : '')+
+    '<button class="dock-tog" data-action="dock" title="'+(open?'Ukryj panel':'Pokaż panel')+'">'+(open?'◂':'▸')+'</button></div>';
+  if(open){
+    const atk = totalAtk(), lo = Math.max(1,Math.round(atk*0.85)), hi = Math.round(atk*1.15);
+    h += '<div class="dock-body">';
+    /* level + exp */
+    h += '<div class="sblock"><div class="srow"><span>POZIOM</span><b style="color:var(--gold)">'+state.level+'</b></div>'+
+      '<div class="bar-lg"><i style="width:'+(state.exp/expToNext(state.level)*100)+'%"></i></div>'+
+      '<div class="srow" style="font-size:11px"><span>'+state.exp+' / '+expToNext(state.level)+' exp</span></div></div>';
+    /* combat stats */
+    h += '<div class="sblock"><div class="sec-h">Statystyki</div>'+
+      '<div class="srow"><span>Obrażenia</span><b>'+lo+'–'+hi+'</b></div>'+
+      '<div class="srow"><span>Punkty życia</span><b>'+totalMaxHp()+'</b></div>'+
+      '<div class="srow"><span>Pancerz</span><b>'+totalDef()+'</b></div>'+
+      '<div class="srow"><span>Cios kryt.</span><b>'+pCrit().toFixed(1)+'%</b></div>'+
+      '<div class="srow"><span>Moc krytyka</span><b>'+pCritPow()+'%</b></div>'+
+      '<div class="srow"><span>Unik</span><b>'+pDodge().toFixed(1)+'%</b></div>'+
+      '<div class="srow"><span>Ogłuszenie</span><b>'+pStun().toFixed(1)+'%</b></div>'+
+      '<div class="srow"><span>Szybkość ataku</span><b>+'+pSpeed().toFixed(1)+'%</b></div>'+
+      '<div class="srow"><span>Bonus zdobyczy</span><b>+'+bonusPct()+'%</b></div></div>';
+    h += '</div>';
+    /* always-visible footer: equipment + bag */
+    h += '<div class="dock-foot"><div class="sec-h">Założone</div><div class="eq-row">';
+    SLOT_KEYS.forEach(k=>{ h += cellHTML(state.equipment[k], 'eq', k); });
+    h += '</div><div class="sec-h" style="margin-top:9px">Torba '+state.inventory.length+'/'+invCap()+'</div>';
+    if(!state.inventory.length) h += '<div class="bag-empty">Pusto — ruszaj na wyprawę.</div>';
+    else {
+      h += '<div class="bag-grid">';
+      state.inventory.slice().sort((a,b)=>b.value-a.value).forEach(it=>{ h += cellHTML(it,'bag'); });
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+  return h+'</div>';
+}
+
+/* ---------- item tooltip ---------- */
+let tipHideT = null;
+function hideTip(){ const t = document.getElementById('tip'); if(t) t.remove(); }
+function showTip(ref, kind, key){
+  const cur = document.getElementById('tip');
+  if(cur && cur.dataset.key === kind+':'+key) return;
+  hideTip();
+  if(kind === 'res'){
+    const r = RES[key]; if(!r) return;
+    const have = key==='gold' ? state.gold : key==='gems' ? state.gems :
+                 key==='keys' ? (state.keys||0) :
+                 key==='energy' ? state.energy+' / '+maxEnergy() : (state.res[key]||0);
+    const el = document.createElement('div');
+    el.id = 'tip'; el.dataset.key = kind+':'+key;
+    el.innerHTML = '<h4 style="color:'+r.color+'">'+r.icon+' '+r.name+'</h4>'+
+      '<div class="tstat" style="margin-top:4px">'+r.desc+'</div>'+
+      '<div class="tstat" style="margin-top:7px">Posiadasz: <b style="color:'+r.color+'">'+have+'</b></div>';
+    document.body.appendChild(el);
+    placeTip(el, ref);
+    return;
+  }
+  const it = kind==='eq' ? state.equipment[key] : state.inventory.find(x=>x.id===key);
+  if(!it) return;
+  const r = rarityInfo(it.rarity), b = SLOT_BASE[it.slot];
+  const lines = STAT_KEYS.filter(k=>it[k]).map(function(k){
+    const m = STAT_META[k];
+    return m.ic+' '+m.name+' <b>+'+effStat(it,k)+m.suf+'</b>';
+  });
+  const el = document.createElement('div');
+  el.id = 'tip';
+  el.dataset.key = kind+':'+key;
+  el.innerHTML = '<h4 style="color:'+r.color+';display:flex;align-items:center;gap:7px">'+itemIcon(it,26)+itemName(it)+'</h4>'+
+    '<span class="trar" style="background:'+r.color+'33;color:'+r.color+'">'+r.label+' • '+b.label+' • poz. '+it.tier+'</span>'+
+    '<div class="tstat">'+lines.join('<br>')+'</div>'+
+    (it.flavor ? '<div class="tstat" style="margin-top:7px;font-style:italic;color:#ffb98a">„'+it.flavor+'"</div>' : '')+
+    (kind==='eq'
+      ? '<div class="trow"><button class="btn sec sm" data-action="unequip" data-id="'+key+'">Zdejmij</button></div>'
+      : '<div class="trow"><button class="btn sm" data-action="equip" data-id="'+it.id+'">Załóż</button>'+
+        '<button class="btn sec sm" data-action="sell" data-id="'+it.id+'">'+sellPrice(it)+' zł</button></div>');
+  document.body.appendChild(el);
+  placeTip(el, ref);
+}
+function placeTip(el, ref){
+  const rect = ref.getBoundingClientRect(), tr = el.getBoundingClientRect();
+  let left = rect.left + rect.width/2 - tr.width/2;
+  let top = rect.top - tr.height - 10;
+  if(top < 8) top = rect.bottom + 10;
+  left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
+  top = Math.max(8, Math.min(top, window.innerHeight - tr.height - 8));
+  el.style.left = left+'px'; el.style.top = top+'px';
+}
+
+function initTips(){
+  document.addEventListener('pointerover', function(e){
+    if(e.pointerType && e.pointerType !== 'mouse') return;
+    if(!e.target.closest) return;
+    if(e.target.closest('#tip')){ clearTimeout(tipHideT); return; }
+    const ref = e.target.closest('[data-tip]');
+    if(!ref) return;
+    clearTimeout(tipHideT);
+    const p = ref.dataset.tip.split(':');
+    showTip(ref, p[0], p[1]);
+  });
+  document.addEventListener('pointerout', function(e){
+    if(e.pointerType && e.pointerType !== 'mouse') return;
+    if(!e.target.closest || !e.target.closest('[data-tip], #tip')) return;
+    clearTimeout(tipHideT);
+    tipHideT = setTimeout(hideTip, 200);
+  });
+}
+
+/* ---------- pan & zoom ---------- */
+const view = {castle:{x:0,y:0,k:1}, world:{x:0,y:0,k:1}};
+let dragged = false;
+function stageEl(){
+  const l = document.getElementById(state.screen==='castle' ? 'layer-castle' : 'layer-world');
+  return l && !l.hidden ? l.querySelector('.iso-stage') : null;
+}
+function applyView(){
+  const st = stageEl(); if(!st) return;
+  const v = view[state.screen];
+  st.style.transform = 'translate('+v.x+'px,'+v.y+'px) scale('+v.k+')';
+}
+function initPanZoom(){
+  const pts = new Map();
+  let start = null, startView = null, startDist = 0, startK = 1, moved = 0;
+  function inStage(t){ const st = stageEl(); return st && st.contains(t); }
+  document.addEventListener('pointerdown', function(e){
+    if(state.battle || state.dungeon || state.openPanel || !inStage(e.target)) return;
+    pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if(pts.size === 1){
+      const v = view[state.screen];
+      start = {x:e.clientX, y:e.clientY}; startView = {x:v.x, y:v.y}; moved = 0;
+    } else if(pts.size === 2){
+      const a = Array.from(pts.values());
+      startDist = Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y);
+      startK = view[state.screen].k;
+    }
+  });
+  document.addEventListener('pointermove', function(e){
+    if(!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    const v = view[state.screen];
+    if(pts.size >= 2){
+      const a = Array.from(pts.values());
+      const d = Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y);
+      if(startDist > 0){ v.k = Math.min(2.6, Math.max(0.5, startK*(d/startDist))); applyView(); }
+      moved = 99;
+    } else if(start){
+      v.x = startView.x + (e.clientX - start.x);
+      v.y = startView.y + (e.clientY - start.y);
+      moved = Math.max(moved, Math.abs(e.clientX-start.x) + Math.abs(e.clientY-start.y));
+      applyView();
+    }
+  });
+  function up(e){
+    if(!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if(pts.size === 0){ dragged = moved > 8; start = null; setTimeout(()=>{ dragged = false; }, 120); }
+  }
+  document.addEventListener('pointerup', up);
+  document.addEventListener('pointercancel', up);
+  document.addEventListener('wheel', function(e){
+    if(state.battle || state.dungeon || state.openPanel || !inStage(e.target)) return;
+    e.preventDefault();
+    const v = view[state.screen];
+    v.k = Math.min(2.6, Math.max(0.5, v.k * (e.deltaY < 0 ? 1.12 : 0.89)));
+    applyView();
+  }, {passive:false});
+  if(window.innerWidth < 620){ view.castle.k = 1.5; view.world.k = 1.25; }
+}
+
+/* =====================================================================
+   7. PANELS
+===================================================================== */
+function pCharacter(){
+  const rows = [
+    ['⚔ Atak', totalAtk()], ['🛡 Obrona', totalDef()], ['❤ Punkty życia', totalMaxHp()],
+    ['🎯 Szansa na krytyka', pCrit().toFixed(1)+'%'], ['💥 Moc krytyka', pCritPow()+'%'],
+    ['🌀 Unik', pDodge().toFixed(1)+'%'], ['⭐ Ogłuszenie', pStun().toFixed(1)+'%'],
+    ['🧱 Blok', pBlock().toFixed(1)+'% mniej obrażeń'],
+    ['⚡ Szybkość ataku', '+'+pSpeed().toFixed(1)+'% (szansa na dodatkowy cios)'],
+    ['✦ Bonus zdobyczy', '+'+bonusPct()+'%'],
+  ];
+  let h = '<div class="card"><h3>Bohater — poziom '+state.level+'</h3>'+
+    '<div class="between"><span class="muted">Doświadczenie</span><b>'+state.exp+' / '+expToNext(state.level)+'</b></div>'+
+    '<div class="bar-lg"><i style="width:'+(state.exp/expToNext(state.level)*100)+'%"></i></div></div>';
+  h += pDevelop();
+  h += '<div class="card"><h3>Statystyki bojowe</h3>'+
+    rows.map(r=>'<div class="stat-line"><span>'+r[0]+'</span><span>'+r[1]+'</span></div>').join('')+
+    '<p class="muted" style="margin:10px 0 0">Koszary: +'+(bLvl('barracks')*3)+' ataku, +'+(bLvl('barracks')*2)+' obrony, +'+bLvl('barracks')+'% szybkości. '+
+    'Kapliczka: +'+(bLvl('shrine')*4)+'% doświadczenia.</p></div>';
+  h += pRelicStrip();
+  h += '<div class="card"><h3>Wyposażenie ('+SLOT_KEYS.filter(k=>state.equipment[k]).length+'/'+SLOT_KEYS.length+')</h3><div class="eq-grid">';
+  SLOT_KEYS.forEach(slot=>{
+    const it = state.equipment[slot], b = SLOT_BASE[slot];
+    h += '<div class="slot'+(it?' on':'')+'"><div class="sic">'+(it?itemIcon(it,28):b.icon)+'</div>';
+    if(it){
+      const r = rarityInfo(it.rarity);
+      h += '<div class="stx"><span class="n" style="color:'+r.color+'">'+itemName(it)+'</span><span class="s">'+itemStats(it)+'</span></div>'+
+           '<button class="btn sec sm" data-action="unequip" data-id="'+slot+'">Zdejmij</button>';
+    } else h += '<div class="stx"><span class="n muted">'+b.label+' — puste</span></div>';
+    h += '</div>';
+  });
+  return h+'</div></div>';
+}
+function pNode(id){
+  const nd = NODES.find(n=>n.id===id), st = nodeState(id), lvl = st.lvl||0;
+  const g = guardianOf(nd, lvl), cost = guardCost(lvl), pend = nodePending(id);
+  let h = '<div class="card"><div class="row" style="align-items:flex-start">'+
+    '<div class="bpreview">'+creatureSVG(g.shape, g.p)+'</div>'+
+    '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:15px">'+nd.icon+' '+nd.name+'</div>'+
+    '<div class="muted">'+(lvl>0?'Wydobycie na poziomie '+lvl:'Złoże jeszcze nie przejęte')+'</div>'+
+    '<div class="muted" style="margin-top:3px">Następny strażnik: <b style="color:var(--text)">'+g.name+'</b> — poziom '+g.level+'</div>'+
+    '<p class="muted" style="margin:7px 0 0">Poziom złoża i poziom strażnika to dwie różne rzeczy — strażnik jest coraz silniejszy z każdym przejęciem.</p></div></div></div>';
+  if(lvl > 0){
+    h += '<div class="card"><h3>Wydobycie</h3><div class="between">'+
+      '<div><div style="font-size:19px;font-weight:800;color:var(--gold)">'+resTag(nd.res, pend)+'</div>'+
+      '<div class="muted">'+nodeRate(nd,lvl)+' '+RES[nd.res].name.toLowerCase()+'/h • magazyn '+nodeCap(nd,lvl)+'</div></div>'+
+      '<button class="btn" data-action="collectnode" data-id="'+id+'" '+(pend<=0?'disabled':'')+'>Odbierz</button></div></div>';
+  }
+  h += '<div class="card"><h3>'+(lvl>0?'Kolejny strażnik (#'+(lvl+1)+')':'Strażnik złoża (#1)')+'</h3>'+
+    '<div class="stat-line"><span>Przeciwnik</span><span>'+g.name+(g.boss?' 👑':'')+'</span></div>'+
+    '<div class="stat-line"><span>Poziom przeciwnika</span><span>'+g.level+'</span></div>'+
+    '<div class="stat-line"><span>Złoże po zwycięstwie</span><span>poziom '+(lvl+1)+'</span></div>'+
+    '<div class="stat-line"><span>Koszt wyprawy</span><span>'+cost+' ⚡</span></div>'+
+    '<div class="stat-line"><span>Wydobycie po zwycięstwie</span><span>'+nodeRate(nd, lvl+1)+' '+nd.icon+'/h</span></div>'+
+    '<div class="row" style="margin-top:11px"><button class="btn" data-action="guard" data-id="'+id+'" '+
+      (state.energy<cost?'disabled':'')+'>Zaatakuj strażnika</button></div></div>';
+  return h;
+}
+function statResetCost(){ return Math.min(60, 5 + (state.statResets||0)*5); }
+function resetStats(){
+  const cost = statResetCost();
+  const spent = alloc('atk')+alloc('def')+alloc('luck');
+  if(spent <= 0){ toast('Nie masz jeszcze rozdanych punktów.'); return; }
+  if(state.gems < cost){ toast('Potrzebujesz '+cost+' 💎 kryształów.'); return; }
+  const c = modal('<h3 class="display">Reset statystyk</h3>'+
+    '<p>Odzyskasz <b>'+spent+'</b> punktów rozwoju za <b>'+cost+' 💎</b>.</p>'+
+    '<p class="muted" style="font-size:12.5px">Każdy kolejny reset kosztuje o 5 💎 więcej (maks. 60).</p>'+
+    '<div class="row"><button class="btn sec" data-close="1">Anuluj</button>'+
+    '<button class="btn" id="yesReset">Resetuj</button></div>');
+  c.querySelector('[data-close]').onclick = ()=>c.remove();
+  c.querySelector('#yesReset').onclick = function(){
+    c.remove();
+    state.gems -= cost;
+    state.points = (state.points||0) + spent;
+    state.alloc = {atk:0, def:0, luck:0};
+    state.statResets = (state.statResets||0) + 1;
+    if(state.hp > totalMaxHp()) state.hp = totalMaxHp();
+    toast('♻️ Odzyskano '+spent+' punktów rozwoju.');
+    render(); saveState();
+  };
+}
+function pDevelop(){
+  const pts = state.points||0;
+  const rows = [
+    ['atk','⚔ Atak','+2 ataku za punkt', alloc('atk'), '+'+(alloc('atk')*2)],
+    ['def','🛡 Obrona','+1,5 obrony za punkt', alloc('def'), '+'+Math.round(alloc('def')*1.5)],
+    ['luck','🍀 Szczęście','+0,2% krytyka i +0,5% szansy na łup', alloc('luck'), '+'+(alloc('luck')*0.2).toFixed(1)+'% / +'+(alloc('luck')*0.5).toFixed(1)+'%'],
+  ];
+  let h = '<div class="card"><div class="between"><h3 style="margin:0">Punkty rozwoju</h3>'+
+    '<b style="color:'+(pts?'var(--gold)':'var(--text-faint)')+';font-size:17px">'+pts+'</b></div>'+
+    '<p class="muted" style="margin:8px 0 0">Za każdy poziom bohatera otrzymujesz '+POINTS_PER_LEVEL+' punkty do rozdania.</p></div><div class="card">';
+  rows.forEach(function(r){
+    h += '<div class="shoprow"><div style="min-width:0"><div style="font-weight:700;font-size:13.5px">'+r[1]+' — '+r[3]+' pkt</div>'+
+      '<div class="muted">'+r[2]+' • obecnie '+r[4]+'</div></div>'+
+      '<button class="btn sm" data-action="point" data-id="'+r[0]+'" '+(pts<=0?'disabled':'')+'>+1</button></div>';
+  });
+  const spent = alloc('atk')+alloc('def')+alloc('luck');
+  h += '<div class="shoprow"><div style="min-width:0"><div style="font-weight:700;font-size:13.5px">♻️ Reset statystyk</div>'+
+    '<div class="muted">'+(spent>0 ? 'Odzyskaj wszystkie '+spent+' rozdanych punktów za kryształy'
+      : 'Nie masz jeszcze rozdanych punktów do odzyskania')+'</div></div>'+
+    '<button class="btn sec sm" data-action="resetstats" '+((spent<=0||state.gems<statResetCost())?'disabled':'')+'>'+statResetCost()+' 💎</button></div>';
+  return h+'</div>';
+}
+
+/* ---------- relikty ---------- */
+function pRelicStrip(){
+  const n = relicSlotCount();
+  let h = '<div class="card"><div class="between"><h3 style="margin:0">Relikty ('+n+' '+(n===1?'gniazdo':'gniazda')+')</h3>'+
+    '<button class="btn sec sm" data-action="panel" data-id="relics">Zarządzaj</button></div><div class="eq-row" style="margin-top:10px">';
+  for(let i=0;i<3;i++){
+    const id = state.relicSlots[i], def = id && relicDef(id);
+    const locked = i >= n;
+    if(locked) h += '<div class="cell free eqslot" title="Gniazdo od poziomu '+((i)*18)+'">🔒</div>';
+    else if(def) h += '<div class="cell eqslot" style="border-color:'+def.color+';background:'+def.color+'22;font-size:22px">'+def.icon+
+      '<span class="up">'+relicOwned(id)+'</span></div>';
+    else h += '<div class="cell free eqslot">🔮</div>';
+  }
+  return h+'</div></div>';
+}
+function pRelics(){
+  const n = relicSlotCount();
+  let h = '<div class="card"><div class="between"><h3 style="margin:0">Odłamki reliktów</h3>'+
+    '<b style="color:#c48ef5;font-size:17px">🔮 '+(state.res.shard||0)+'</b></div>'+
+    '<p class="muted" style="margin:8px 0 0">Odłamki zdobywasz w <b>lochach</b> (minigra na 60 s), a także z bossów i Wędrownego Herosa. '+
+    'Aktywne są tylko relikty włożone w gniazda — masz ich '+n+' z 3 (kolejne na poziomie 18 i 36).</p></div>';
+  h += '<div class="card">';
+  RELICS.forEach(function(r){
+    const lvl = relicOwned(r.id), on = state.relicSlots.indexOf(r.id) >= 0;
+    const cost = relicCost(lvl), maxed = lvl >= RELIC_MAX;
+    h += '<div class="shoprow"><div style="min-width:0;display:flex;gap:9px;align-items:flex-start">'+
+      '<div class="sic" style="border:2px solid '+r.color+';background:'+r.color+'22">'+r.icon+'</div>'+
+      '<div style="min-width:0"><div style="font-weight:700;font-size:13.5px;color:'+(lvl?r.color:'var(--text-faint)')+'">'+
+        r.name+(lvl?' • poz. '+lvl:' • niezdobyty')+(on?' <span style="color:var(--ok)">✓ aktywny</span>':'')+'</div>'+
+      '<div class="muted">'+(lvl ? r.desc(lvl) : r.desc(1)+' (po odblokowaniu)')+'</div>'+
+      (maxed?'':'<div class="muted" style="color:'+((state.res.shard||0)>=cost?'var(--ok)':'#e0524a')+'">Koszt: '+cost+' 🔮</div>')+
+      '</div></div>'+
+      '<div style="display:flex;flex-direction:column;gap:5px;flex:none">'+
+      (maxed ? '<span class="muted" style="font-size:11px">MAKS</span>'
+             : '<button class="btn sm" data-action="relicup" data-id="'+r.id+'" '+((state.res.shard||0)<cost?'disabled':'')+'>'+(lvl?'+1':'Odblokuj')+'</button>')+
+      (lvl ? '<button class="btn sec sm" data-action="relictoggle" data-id="'+r.id+'">'+(on?'Wyjmij':'Włóż')+'</button>' : '')+
+      '</div></div>';
+  });
+  return h+'</div>';
+}
+function pInventory(){
+  let h = '<div class="card"><h3>Założone</h3><div class="eq-row">';
+  SLOT_KEYS.forEach(k=>{ h += cellHTML(state.equipment[k], 'eq', k); });
+  h += '</div><p class="muted" style="margin:9px 0 0">Kliknij przedmiot, by zobaczyć statystyki i nim zarządzać.</p></div>';
+  h += '<div class="card"><div class="between"><h3 style="margin:0">Torba ('+state.inventory.length+'/'+invCap()+')</h3>'+
+    '<button class="btn sec sm" data-action="sellcommons">Sprzedaj pospolite</button></div>';
+  if(!state.inventory.length) h += '<p class="muted" style="margin:10px 0 0">Pusto. Ruszaj na mapę świata i pokonuj potwory.</p>';
+  else {
+    h += '<div class="bag-grid" style="max-height:none;margin-top:11px">';
+    state.inventory.slice().sort((a,b)=>b.value-a.value).forEach(it=>{ h += cellHTML(it,'bag'); });
+    h += '</div>';
+  }
+  return h+'</div>';
+}
+function pAchievements(){
+  const maxLv = ACHIEVEMENTS.reduce((a,x)=>a+x.tiers.length,0);
+  const curLv = ACHIEVEMENTS.reduce((a,x)=>a+achLevel(x.id),0);
+  const done = ACHIEVEMENTS.filter(a=>achLevel(a.id) >= a.tiers.length).length;
+  let h = '<div class="card"><h3>Poziomy osiągnięć: '+curLv+' / '+maxLv+'</h3>'+
+    '<div class="bar-lg"><i style="width:'+(curLv/maxLv*100)+'%"></i></div>'+
+    '<div class="stat-line" style="margin-top:8px"><span>Ukończone w pełni</span><span>'+done+' / '+ACHIEVEMENTS.length+'</span></div>'+
+    '<p class="muted" style="margin:9px 0 0">Każde osiągnięcie ma kilka poziomów — po zdobyciu jednego od razu rusza kolejny, '+
+    'a nagrody rosną wraz z poziomem. Trafiają do Ciebie automatycznie.</p></div><div class="card">';
+  ACHIEVEMENTS.slice().sort(function(a,b){
+    const fa = achLevel(a.id) >= a.tiers.length, fb = achLevel(b.id) >= b.tiers.length;
+    return (fa?1:0)-(fb?1:0);
+  }).forEach(function(a){
+    const lvl = achLevel(a.id), full = lvl >= a.tiers.length;
+    const target = achTarget(a, lvl);
+    const cur = Math.max(0, Math.min(target, a.get(state)));
+    const rw = achReward(Math.min(lvl+1, a.tiers.length));
+    h += '<div class="ach'+(full?' done':'')+'"><div class="achk">'+(full?'✓':a.icon)+'</div>'+
+      '<div style="flex:1;min-width:0"><div class="between">'+
+        '<div style="font-size:13.5px;font-weight:700">'+a.name+' '+(lvl?'<span style="color:var(--gold)">'+toRoman(lvl)+'</span>':'')+'</div>'+
+        '<div class="muted" style="font-size:11.5px;white-space:nowrap">'+(full?'MAKS':cur+' / '+target)+'</div></div>'+
+      '<div class="muted" style="font-size:12px">'+(full?'Wszystkie '+a.tiers.length+' poziomów zdobyte.':a.desc(target))+'</div>'+
+      '<div class="bar-lg"><i style="width:'+(full?100:(cur/target*100))+'%"></i></div>'+
+      (full?'' : '<div class="ach-rw">Za poziom '+toRoman(lvl+1)+': '+rw.gold+' złota • '+rw.gems+' 💎 • '+rw.exp+' exp</div>')+
+      '</div></div>';
+  });
+  return h+'</div>';
+}
+function buildingPreview(id, lvl){
+  const inner = lvl>0 ? BUILDING_MODELS[id](0,0,lvl) : emptyPlot(0,0,2.4,null);
+  return '<svg viewBox="-85 -95 170 180" preserveAspectRatio="xMidYMid meet">'+inner+'</svg>';
+}
+function pBuilding(id){
+  const def = BUILDINGS[id], lvl = bLvl(id), next = lvl+1;
+  const maxed = next > def.max;
+  const capped = id!=='keep' && next > bLvl('keep');
+  const cost = maxed ? null : bcostFull(id, next);
+  let h = '<div class="card"><div class="row" style="align-items:flex-start">'+
+    '<div class="bpreview">'+buildingPreview(id, lvl)+'</div>'+
+    '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:15px">'+def.icon+' '+def.name+'</div>'+
+    '<div class="muted">'+(lvl>0?'Poziom '+lvl:'Jeszcze nie wybudowano')+'</div>'+
+    '<p class="muted" style="margin:7px 0 0">'+def.desc+'</p></div></div>';
+  if(lvl>0) h += '<div class="card" style="margin:11px 0 0;background:rgba(255,206,84,.08)"><b style="font-size:13px">Teraz:</b> '+def.effect(lvl)+'</div>';
+  if(!maxed) h += '<div class="card" style="margin:9px 0 0"><b style="font-size:13px;color:var(--ok)">Po ulepszeniu (poz. '+next+'):</b> '+def.effect(next)+'</div>';
+  h += '<div class="between" style="margin-top:12px">'+
+    '<span class="muted">'+(maxed?'Poziom maksymalny':'Koszt: '+costHTML(cost))+'</span>'+
+    (maxed?'':'<button class="btn" data-action="build" data-id="'+id+'" '+((!canAfford(cost)||capped)?'disabled':'')+'>'+(lvl>0?'Ulepsz':'Wybuduj')+'</button>')+
+    '</div>';
+  if(capped) h += '<p class="muted" style="margin:8px 0 0;color:#f0b23e">Wymaga Zamku na poziomie '+next+'.</p>';
+  h += '</div>';
+
+  if(id==='mine' && lvl>0){
+    const p = minePending();
+    h += '<div class="card"><h3>Urobek</h3><div class="between">'+
+      '<div><div style="font-size:19px;font-weight:800;color:var(--gold)">'+p+' złota</div>'+
+      '<div class="muted">magazyn '+mineCap(lvl)+' • '+mineRate(lvl)+'/h</div></div>'+
+      '<button class="btn" data-action="collect" '+(p<=0?'disabled':'')+'>Odbierz</button></div></div>';
+  }
+  if(id==='sawmill' && lvl>0){
+    const w = sawPending('wood'), s = sawPending('stone');
+    h += '<div class="card"><h3>Produkcja</h3><div class="between">'+
+      '<div><div style="font-size:18px;font-weight:800;color:var(--gold)">'+resTag('wood',w)+' &nbsp; '+resTag('stone',s)+'</div>'+
+      '<div class="muted">magazyn '+sawCap(lvl)+' • '+sawRate(lvl,'wood')+'/h drewna, '+sawRate(lvl,'stone')+'/h kamienia</div></div>'+
+      '<button class="btn" data-action="collectsaw" '+((w+s)<=0?'disabled':'')+'>Odbierz</button></div>'+
+      '<p class="muted" style="margin:9px 0 0">Większe ilości surowców zdobędziesz w złożach na mapie świata.</p></div>';
+  }
+  if(id==='forge' && lvl>0){
+    h += '<div class="card"><h3>Ulepszanie przedmiotów</h3>';
+    let any = false;
+    SLOT_KEYS.forEach(slot=>{
+      const it = state.equipment[slot]; if(!it) return;
+      any = true;
+      const r = rarityInfo(it.rarity), atMax = (it.upg||0) >= lvl, c = forgeCost(it);
+      h += '<div class="shoprow"><div style="min-width:0"><div style="color:'+r.color+';font-weight:700;font-size:13.5px">'+itemName(it)+'</div>'+
+        '<div class="muted">'+itemStats(it)+' • '+(atMax?'maks. dla poz. '+lvl:'koszt '+c+' zł')+'</div></div>'+
+        '<button class="btn sm" data-action="forge" data-id="'+slot+'" '+((atMax||state.gold<c)?'disabled':'')+'>+1</button></div>';
+    });
+    if(!any) h += '<p class="muted">Załóż jakiś przedmiot, by go ulepszyć.</p>';
+    h += '</div>';
+  }
+  if(id==='market' && lvl>0){
+    h += '<div class="card"><h3>Oferta za kryształy 💎 '+state.gems+'</h3>';
+    marketOffers().forEach(o=>{
+      h += '<div class="shoprow"><div style="min-width:0"><div style="font-weight:700;font-size:13.5px">'+o.name+'</div>'+
+        '<div class="muted">'+o.desc+'</div></div>'+
+        '<button class="btn sm" data-action="buy" data-id="'+o.id+'" '+(state.gems<o.cost?'disabled':'')+'>'+o.cost+' 💎</button></div>';
+    });
+    h += '<p class="muted" style="margin:9px 0 0">Kryształy zdobywasz za bossów, Wędrownego Herosa, poziomy osiągnięć i skrzynie z zadań dziennych.</p></div>';
+  }
+  return h;
+}
+const PANEL_TITLES = {character:'Postać', inventory:'Ekwipunek', achievements:'Osiągnięcia', relics:'Relikty'};
+function renderPanel(){
+  const layer = document.getElementById('layer-panel');
+  if(!state.openPanel){ layer.hidden = true; layer.innerHTML = ''; return; }
+  let title = '', sub = '', body = '';
+  if(state.openPanel === 'building'){
+    const def = BUILDINGS[state.panelArg];
+    title = def.icon+' '+def.name; sub = 'Posiadłość • Eldren';
+    body = pBuilding(state.panelArg);
+  } else if(state.openPanel === 'zone'){
+    const z = ZONES.find(x=>x.id===state.panelArg);
+    title = z.name; sub = 'Wybierz przeciwnika';
+    body = pZone(state.panelArg);
+  } else if(state.openPanel === 'node'){
+    const nd = NODES.find(x=>x.id===state.panelArg);
+    title = nd.icon+' '+nd.name; sub = 'Złoże surowców • Eldren';
+    body = pNode(state.panelArg);
+  } else {
+    title = PANEL_TITLES[state.openPanel] || '';
+    body = state.openPanel==='character' ? pCharacter()
+         : state.openPanel==='inventory' ? pInventory()
+         : state.openPanel==='relics' ? pRelics()
+         : pAchievements();
+  }
+  layer.hidden = false;
+  layer.innerHTML = '<div class="pcard"><button class="pclose" data-action="closepanel">✕</button>'+
+    '<h2 class="ptitle display">'+title+'</h2>'+(sub?'<p class="psub">'+sub+'</p>':'')+body+'</div>';
+}
+
+/* =====================================================================
+   8. MODALS
+===================================================================== */
+function modal(html){
+  const bg = document.createElement('div'); bg.className = 'mbg';
+  bg.innerHTML = '<div class="modal">'+html+'</div>';
+  document.body.appendChild(bg);
+  bg.addEventListener('click', e=>{ if(e.target===bg) bg.remove(); });
+  return bg;
+}
+function pZone(zid){
+  const z = ZONES.find(x=>x.id===zid);
+  regenEnergy();
+  let h = '<div class="card"><div class="stages">';
+  stageList(z).forEach(function(st){
+    const m = MONSTERS[st.key], open = stageUnlocked(z, st), can = open && state.energy >= st.cost;
+    h += '<div class="stage'+(st.boss?' boss':'')+(open?'':' locked')+'">'+
+      '<div class="eta">'+(st.boss?'Boss':'Etap '+(st.idx+1))+'</div>'+
+      '<div class="art">'+(open ? creatureSVG(m.shape, m.p) : '<svg viewBox="0 0 100 100"><text x="50" y="66" text-anchor="middle" font-size="44">🔒</text></svg>')+'</div>'+
+      '<div class="nm">'+(open ? m.name : '???')+'</div>'+
+      '<div class="lv">Poziom '+m.level+'</div>'+
+      '<div class="lv">'+st.cost+' ⚡ energii</div>'+
+      (open
+        ? '<button class="btn sm" data-action="fight" data-id="'+zid+'" data-stage="'+st.idx+'" '+(can?'':'disabled')+'>Atakuj</button>'
+        : '<div class="lv">Pokonaj etap '+st.idx+'</div>')+
+      '</div>';
+  });
+  h += '</div></div>';
+  /* --- wrota lochu --- */
+  const dg = z.dungeon, cleared = zoneCleared(zid), keys = state.keys||0;
+  h += '<div class="card" style="border-color:'+(cleared?'var(--gold)':'rgba(255,255,255,.08)')+'">'+
+    '<div class="between"><h3 style="margin:0">'+dg.icon+' '+dg.name+'</h3>'+
+    '<b style="color:var(--gold);font-size:14px">🗝️ '+keys+'</b></div>';
+  if(!cleared){
+    h += '<p class="muted" style="margin:9px 0 0">🔒 Wrota są zapieczętowane. Pokonaj wszystkie 3 etapy <b>oraz bossa</b> tej krainy, '+
+      'aby odsłonić wejście do lochów. Postęp: '+Math.min(4, zoneProgress(zid))+' / 4.</p>';
+  } else {
+    h += '<p class="muted" style="margin:9px 0 0">60 sekund, jedno wejście na klucz. Biegasz po lochu i zbierasz '+
+      '🔮 odłamki reliktów, 🪙 złoto i 💎 kryształy — im głębszy loch, tym większy mnożnik '+
+      '(×'+(1+(dg.tier-1)*0.35).toFixed(2)+'). Uważaj na 👻 zjawy: kradną czas i odłamki.</p>'+
+      '<div class="between" style="margin-top:11px"><span class="muted">'+(keys>0?'Koszt wejścia: 1 🗝️ klucz':'Brak klucza — zdobądź go ze skrzyń za zadania dzienne')+'</span>'+
+      '<button class="btn" data-action="dungeon" data-id="'+zid+'" '+(keys>0?'':'disabled')+'>Wejdź do lochów</button></div>';
+  }
+  h += '</div>';
+  h += '<div class="card"><div class="between"><span class="muted">Twoja energia</span>'+
+    '<b style="color:var(--energy)" id="zoneEnergy">'+state.energy+' / '+maxEnergy()+' ⚡</b></div>'+
+    '<p class="muted" style="margin:8px 0 0">Każdy pokonany etap odblokowuje kolejnego, silniejszego przeciwnika. '+
+    'Boss zawsze zostawia przedmiot co najmniej rzadki, kryształy 💎 i odłamki 🔮. '+
+    '<b style="color:#ff8a3c">Artefaktów</b> nie znajdziesz już w krainach — zostawia je wyłącznie <b>Wędrowny Heros</b> (5% szans).</p>'+
+    '<p class="muted" style="margin:6px 0 0">Przegrana walka <b>zwraca zużytą energię</b> — tracisz tylko czas.</p></div>';
+  return h;
+}
+function backToPicker(loot){
+  if(loot.hero){ return; }
+  if(loot.guard){ state.openPanel = 'node'; state.panelArg = loot.guard; }
+  else if(loot.zoneId){ state.openPanel = 'zone'; state.panelArg = loot.zoneId; }
+  renderPanel();
+}
+function retryBtnHTML(loot){
+  if(loot.hero){
+    if(!state.heroSpawn || !state.heroSpawn.alive) return '';
+    return '<button class="btn" id="again" '+(state.energy<heroCost()?'disabled':'')+'>Walcz ponownie ('+heroCost()+'⚡)</button>';
+  }
+  if(loot.guard){
+    const cost = guardCost(nodeState(loot.guard).lvl || 0);
+    return '<button class="btn" id="again" '+(state.energy<cost?'disabled':'')+'>Atakuj ponownie ('+cost+'⚡)</button>';
+  }
+  const z = ZONES.find(x=>x.id===loot.zoneId);
+  if(!z || loot.stageIdx == null) return '';
+  const st = stageList(z)[loot.stageIdx];
+  return '<button class="btn" id="again" '+(state.energy<st.cost?'disabled':'')+'>Walcz ponownie ('+st.cost+'⚡)</button>';
+}
+function wireLoot(d, loot){
+  const close = d.querySelector('[data-close]');
+  if(close) close.onclick = ()=>{ d.remove(); backToPicker(loot); render(); };
+  const again = d.querySelector('#again');
+  if(again) again.onclick = ()=>{
+    d.remove();
+    if(loot.hero) fightHero();
+    else if(loot.guard) fightGuardian(loot.guard);
+    else startExplore(loot.zoneId, loot.stageIdx);
+  };
+}
+function showLootModal(loot){
+  if(!loot.won){
+    const d = modal('<h3 class="display" style="color:var(--danger)">Porażka</h3>'+
+      '<div class="loot-art">'+creatureSVG(loot.shape, loot.p)+'</div>'+
+      '<p>'+loot.name+' okazał się zbyt silny. Wracasz do posiadłości, by odzyskać siły.</p>'+
+      (loot.refund ? '<p style="color:var(--energy);font-weight:700;margin:6px 0">⚡ Zwrócono '+loot.refund+' energii — przegrana nic Cię nie kosztuje.</p>' : '')+
+      '<p class="muted" style="font-size:12.5px">Ulepsz ekwipunek w Kuźni, wzmocnij relikty albo rozbuduj Koszary.</p>'+
+      '<div class="row"><button class="btn sec" data-close="1">Wracam</button>'+retryBtnHTML(loot)+'</div>');
+    wireLoot(d, loot);
+    return;
+  }
+  if(loot.guard){
+    const nd = NODES.find(n=>n.id===loot.nodeId);
+    const d = modal('<h3 class="display">Strażnik pokonany!</h3>'+
+      '<div class="loot-art">'+creatureSVG(loot.shape, loot.p)+'</div>'+
+      '<div class="loot-row"><span>Złoto</span><b>+'+loot.gold+'</b></div>'+
+      '<div class="loot-row"><span>Doświadczenie</span><b>+'+loot.exp+'</b></div>'+
+      '<p style="color:var(--ok);font-weight:700;margin:9px 0 0">'+nd.icon+' '+nd.name+' — poziom '+loot.nodeLvl+'</p>'+
+      '<p class="muted" style="font-size:12.5px">Wydobycie: '+nodeRate(nd, loot.nodeLvl)+' '+RES[nd.res].name+'/h</p>'+
+      '<div class="row"><button class="btn sec" data-close="1">Wróć</button>'+retryBtnHTML(loot)+'</div>');
+    wireLoot(d, loot);
+    return;
+  }
+  let h = '<h3 class="display">Zwycięstwo!</h3>'+
+    '<p class="muted" style="margin-top:-2px">Pokonano: '+loot.name+(loot.boss?' 👑':'')+'</p>'+
+    '<div class="loot-art">'+creatureSVG(loot.shape, loot.p)+'</div>'+
+    '<div style="margin-top:8px">'+
+    '<div class="loot-row"><span '+resTip('gold')+'>Złoto</span><b>+'+loot.gold+'</b></div>'+
+    '<div class="loot-row"><span>Doświadczenie</span><b>+'+loot.exp+'</b></div>'+
+    (loot.gems?'<div class="loot-row"><span '+resTip('gems')+'>Kryształy</span><b>+'+loot.gems+' 💎</b></div>':'')+
+    '</div>';
+  if(loot.levelAfter > loot.levelBefore) h += '<p style="color:var(--ok);font-weight:700;margin:8px 0 0">⭐ Awans na poziom '+loot.levelAfter+'!</p>';
+  if(loot.item){
+    const r = rarityInfo(loot.item.rarity);
+    h += '<div class="loot-item"'+(loot.item.art?' style="border-color:#ff8a3c;background:rgba(255,138,60,.12)"':'')+'>'+itemIcon(loot.item, 40)+
+      '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13.5px;color:'+r.color+'">'+
+      (loot.item.art?'✦ ':'')+itemName(loot.item)+'</div>'+
+      '<div class="muted" style="font-size:12px">'+r.label+' • '+SLOT_BASE[loot.item.slot].label+'</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-top:3px">'+itemStats(loot.item)+'</div>'+
+      (loot.item.flavor?'<div style="font-size:12px;font-style:italic;color:#ffb98a;margin-top:4px">„'+loot.item.flavor+'"</div>':'')+
+      '</div></div>';
+  } else if(loot.lost){
+    h += '<p style="color:var(--danger);font-size:13px;margin:9px 0 0">Plecak pełny — łup przepadł!</p>';
+  }
+  if(loot.shard) h += '<p style="color:#c48ef5;font-size:13px;margin:7px 0 0">🔮 +'+loot.shard+' odłamków reliktów</p>';
+  if(loot.unlocked){
+    const nm = MONSTERS[loot.unlocked.key];
+    h += '<p style="color:var(--ok);font-size:13px;margin:9px 0 0">🔓 Odblokowano: '+nm.name+' (poz. '+nm.level+')</p>';
+  }
+  if(loot.dungeonOpen){
+    h += '<p style="color:var(--gold);font-size:13px;margin:9px 0 0;font-weight:700">🗝️ Kraina oczyszczona! Otworzyły się wrota: '+
+      loot.dungeonOpen.icon+' '+loot.dungeonOpen.name+'</p>'+
+      '<p class="muted" style="font-size:12px">Wejście kosztuje 1 klucz — zdobędziesz go w skrzyniach za zadania dzienne.</p>';
+  }
+  if(loot.hero){
+    h += '<p class="muted" style="font-size:12px;margin:9px 0 0">Heros wróci na mapę za 30–60 minut.</p>';
+  }
+  h += '<div class="row"><button class="btn sec" data-close="1">Odbierz</button>'+retryBtnHTML(loot)+'</div>';
+  wireLoot(modal(h), loot);
+}
+function showChestModal(){
+  const rw = openChest();
+  if(!rw) return;
+  let h = '<h3 class="display">🎁 Skrzynia otwarta!</h3>'+
+    '<p class="muted" style="margin-top:-2px">Pozostało skrzyń: '+(state.chests||0)+'</p><div style="margin-top:8px">';
+  if(rw.key) h += '<div class="loot-row"><span>🗝️ Klucz do lochów</span><b>+'+rw.key+'</b></div>';
+  h += '<div class="loot-row"><span>🪙 Złoto</span><b>+'+rw.gold+'</b></div>';
+  h += '<div class="loot-row"><span>🔮 Odłamki</span><b>+'+rw.shard+'</b></div>';
+  if(rw.gems) h += '<div class="loot-row"><span>💎 Kryształy</span><b>+'+rw.gems+'</b></div>';
+  h += '</div>';
+  if(rw.item){
+    const r = rarityInfo(rw.item.rarity);
+    h += '<div class="loot-item">'+itemIcon(rw.item, 40)+
+      '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13.5px;color:'+r.color+'">'+itemName(rw.item)+'</div>'+
+      '<div class="muted" style="font-size:12px">'+r.label+' • '+SLOT_BASE[rw.item.slot].label+'</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-top:3px">'+itemStats(rw.item)+'</div></div></div>';
+  } else if(rw.lost){
+    h += '<p style="color:var(--danger);font-size:13px;margin:9px 0 0">Plecak pełny — przedmiot przepadł!</p>';
+  }
+  if(!rw.key) h += '<p class="muted" style="font-size:12px;margin:9px 0 0">Tym razem bez klucza — trafia się w mniej więcej 6 skrzyniach na 10.</p>';
+  h += '<div class="row"><button class="btn sec" data-close="1">Zamknij</button>'+
+    ((state.chests||0)>0 ? '<button class="btn" id="chestAgain">Otwórz kolejną</button>' : '')+'</div>';
+  const d = modal(h);
+  d.querySelector('[data-close]').onclick = ()=>{ d.remove(); render(); };
+  const again = d.querySelector('#chestAgain');
+  if(again) again.onclick = ()=>{ d.remove(); showChestModal(); };
+}
+function showHeroModal(){
+  const hs = state.heroSpawn;
+  if(!hs || !hs.alive){ toast('Herosa już tu nie ma.'); return; }
+  const m = heroMonster(), st = monsterStats(m), cost = heroCost();
+  const d = modal('<h3 class="display">🦸 Wędrowny Heros</h3>'+
+    '<div class="loot-art" style="width:96px;height:96px">'+creatureSVG('hero', m.p)+'</div>'+
+    '<p class="muted" style="margin-top:2px">Elitarny przeciwnik, który wędruje przez Eldren. Znika po 10 minutach '+
+    'i wraca po 30–60 minutach.</p>'+
+    '<div style="margin-top:8px">'+
+    '<div class="loot-row"><span>Poziom</span><b>'+m.level+'</b></div>'+
+    '<div class="loot-row"><span>Życie</span><b>'+st.hp+'</b></div>'+
+    '<div class="loot-row"><span>Koszt wyprawy</span><b>'+cost+' ⚡</b></div>'+
+    '<div class="loot-row"><span>Znika za</span><b>'+fmtT((HERO_LIFETIME-(Date.now()-hs.at))/1000)+'</b></div>'+
+    '</div>'+
+    '<p style="color:#ff8a3c;font-weight:700;font-size:13px;margin:9px 0 0">Tylko tutaj wypadają artefakty — 5% szansy.</p>'+
+    '<p class="muted" style="font-size:12.5px">Poza tym: gwarantowany przedmiot epicki lub lepszy, kryształy i odłamki reliktów.</p>'+
+    '<div class="row"><button class="btn sec" data-close="1">Jeszcze nie</button>'+
+    '<button class="btn" id="goHero" '+(state.energy<cost?'disabled':'')+'>Do walki!</button></div>');
+  d.querySelector('[data-close]').onclick = ()=>d.remove();
+  d.querySelector('#goHero').onclick = ()=>{ d.remove(); fightHero(); };
+}
+function showSoonModal(id){
+  const d = SOON[id];
+  const bg = modal('<h3 class="display">'+d.icon+' '+d.name+'</h3><p>'+d.desc+'</p>'+
+    '<p class="muted" style="font-size:12.5px">Plac jest już zarezerwowany — budynek pojawi się w kolejnej aktualizacji.</p>'+
+    '<div class="row"><button class="btn" data-close="1">Rozumiem</button></div>');
+  bg.querySelector('[data-close]').onclick = ()=>bg.remove();
+}
+function showSettings(){
+  const bg = modal('<h3 class="display">Ustawienia</h3>'+
+    '<p>Imię bohatera</p>'+
+    '<input id="heroName" value="'+state.name.replace(/"/g,'')+'" maxlength="14" '+
+      'style="width:100%;padding:9px 11px;border-radius:10px;border:2px solid #6b4f33;background:rgba(0,0,0,.35);color:#fff6e2;font-family:inherit;font-size:14px"/>'+
+    '<p class="muted" style="font-size:12px;margin-top:10px">Postęp zapisuje się w tej przeglądarce.</p>'+
+    '<div class="row"><button class="btn sec" data-close="1">Zamknij</button>'+
+    '<button class="btn" id="saveName">Zapisz</button></div>'+
+    '<div class="row"><button class="btn dgr" id="resetGame">Nowa gra</button></div>');
+  bg.querySelector('[data-close]').onclick = ()=>bg.remove();
+  bg.querySelector('#saveName').onclick = ()=>{
+    const v = (bg.querySelector('#heroName').value||'').trim();
+    if(v) { state.name = v.slice(0,14); saveState(); render(); }
+    bg.remove();
+  };
+  bg.querySelector('#resetGame').onclick = ()=>{
+    bg.remove();
+    const c = modal('<h3 class="display" style="color:var(--danger)">Na pewno?</h3>'+
+      '<p>Cały postęp — posiadłość, przedmioty i poziomy — zostanie usunięty.</p>'+
+      '<div class="row"><button class="btn sec" data-close="1">Anuluj</button>'+
+      '<button class="btn dgr" id="yes">Usuń postęp</button></div>');
+    c.querySelector('[data-close]').onclick = ()=>c.remove();
+    c.querySelector('#yes').onclick = ()=>{
+      if(battleTimer){ clearInterval(battleTimer); battleTimer = null; }
+      state = defaultState(); saveState(); c.remove(); render();
+    };
+  };
+}
+
+/* =====================================================================
+   9. MAIN RENDER + EVENTS + BOOT
+===================================================================== */
+function render(){
+  const c = document.getElementById('layer-castle'), w = document.getElementById('layer-world');
+  const onCastle = state.screen === 'castle';
+  const inDg = !!state.dungeon;
+  c.hidden = !onCastle || inDg; w.hidden = onCastle || inDg;
+  if(!inDg){ if(onCastle) renderCastle(); else renderWorld(); }
+  renderBattle(); renderDungeon(); renderHud(); renderPanel();
+  applyView();
+}
+document.addEventListener('keydown', function(e){
+  if(e.key !== 'Escape') return;
+  if(state.dungeon){ quitDungeon(); return; }
+  const m = document.querySelector('.mbg');
+  if(m){ m.remove(); return; }
+  if(document.getElementById('tip')){ hideTip(); return; }
+  if(state.openPanel){ state.openPanel = null; renderPanel(); }
+});
+document.addEventListener('click', function(e){
+  if(dragged) return;
+  /* click outside an open tooltip closes it */
+  const tipEl = document.getElementById('tip');
+  if(tipEl && !tipEl.contains(e.target) && !e.target.closest('[data-tip]')) hideTip();
+  /* click on the dimmed backdrop closes the panel */
+  const panelLayer = document.getElementById('layer-panel');
+  if(!panelLayer.hidden && e.target === panelLayer){ state.openPanel = null; renderPanel(); return; }
+  const tipRef = e.target.closest('[data-tip]');
+  if(tipRef){
+    const parts = tipRef.dataset.tip.split(':');
+    showTip(tipRef, parts[0], parts[1]);
+    return;
+  }
+  const el = e.target.closest('[data-action]');
+  if(!el) return;
+  const a = el.dataset.action, id = el.dataset.id;
+  if(a==='dock'){ state.dockOpen = state.dockOpen === false; renderHud(); saveState(); return; }
+  if(a==='quests'){ state.questsOpen = state.questsOpen === false; renderQuests(); saveState(); return; }
+  if(a==='claimquest'){ claimQuest(id); return; }
+  if(a==='openchest'){ showChestModal(); return; }
+  if(a==='relicup'){ upgradeRelic(id); return; }
+  if(a==='relictoggle'){ toggleRelic(id); return; }
+  if(a==='resetstats'){ resetStats(); return; }
+  if(a==='dungeon'){ enterDungeon(id); return; }
+  if(a==='dgquit'){ quitDungeon(); return; }
+  if(a==='hero'){ showHeroModal(); return; }
+  if(a==='plot'){
+    if(SOON[id]) showSoonModal(id);
+    else { state.openPanel = 'building'; state.panelArg = id; renderPanel(); }
+  }
+  else if(a==='zone'){
+    const z = ZONES.find(x=>x.id===id);
+    if(state.level < z.unlockLevel){ toast('Odblokujesz tę krainę na poziomie '+z.unlockLevel+'.'); return; }
+    state.openPanel = 'zone'; state.panelArg = id; renderPanel();
+  }
+  else if(a==='fight'){ startExplore(id, parseInt(el.dataset.stage,10)); }
+  else if(a==='nav'){ state.screen = state.screen==='castle' ? 'world' : 'castle'; state.openPanel = null; render(); saveState(); }
+  else if(a==='panel'){ state.openPanel = id; renderPanel(); }
+  else if(a==='closepanel'){ state.openPanel = null; renderPanel(); }
+  else if(a==='build'){ buildOrUpgrade(id); }
+  else if(a==='collect'){ collectMine(false); }
+  else if(a==='collectsaw'){ collectSaw(false); }
+  else if(a==='node'){ state.openPanel = 'node'; state.panelArg = id; renderPanel(); }
+  else if(a==='collectnode'){ collectNode(id); }
+  else if(a==='guard'){ fightGuardian(id); }
+  else if(a==='point'){ spendPoint(id); }
+  else if(a==='forge'){ forgeUpgrade(id); }
+  else if(a==='buy'){ buyOffer(id); }
+  else if(a==='equip'){ hideTip(); equipItem(id); }
+  else if(a==='unequip'){ hideTip(); unequipItem(id); }
+  else if(a==='sell'){ sellItem(id); }
+  else if(a==='sellcommons'){ sellCommons(); }
+  else if(a==='flee'){ fleeBattle(); }
+  else if(a==='settings'){ showSettings(); }
+});
+
+let tick = 0;
+let lastEnergy = -1;
+setInterval(function(){
+  tick++;
+  regenEnergy();
+  ensureDaily();
+  tickHero();
+  if(!state.dungeon) renderHud();
+  /* panele pokazujące energię muszą nadążać za regeneracją */
+  if(state.energy !== lastEnergy){
+    lastEnergy = state.energy;
+    if(state.openPanel === 'zone' || state.openPanel === 'node') renderPanel();
+  }
+  if(tick % 6 === 0 && !state.battle && !state.dungeon){
+    if(state.screen==='castle') renderCastle(); else renderWorld();
+  }
+  saveState();
+}, 5000);
+
+try{
+  window.claude && window.claude.hot && window.claude.hot.snapshot &&
+  window.claude.hot.snapshot(function(){ return {__eldren: state}; });
+}catch(e){}
+
+initPanZoom();
+initTips();
+initDungeonControls();
+ensureDaily();
+tickHero();
+render();
+if(!state.seenIntro){
+  state.seenIntro = true; saveState();
+  setTimeout(()=>toast('Witaj w Eldren! Rozbuduj posiadłość i wyruszaj w świat przyciskiem 🗺️.'), 500);
+}
+})();
+</script>
+
+</body></html>
